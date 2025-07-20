@@ -1,6 +1,6 @@
 <template>
     <div class="multi-expert-init-container">
-        <h1>尊敬的专家您好，待审漏洞:{{ statistic.pending }}个, 已完成漏洞:{{ statistic.completed }}个, 主持会议:{{ statistic.meetings }}个</h1>
+        <h1>尊敬的专家您好，待审漏洞:{{ statistic.pending }}个,草稿：{{ statistic.draft }}, 已完成漏洞:{{ statistic.completed }}个, 主持会议:{{ statistic.meetings }}个</h1>
 
         <h2 style="margin-top: 32px;">我主持的会议</h2>
         <a-table :columns="meetingColumns" :data-source="meetingData" rowKey="id" bordered>
@@ -64,6 +64,7 @@ export default {
         statistic: {
           pending: 0,
           completed: 0,
+          draft: 0,
           meetings: 0,
         },
         // 漏洞表格的表头
@@ -101,6 +102,8 @@ export default {
             { id: 2, meetingId: 'M-20240715-002', topic: '第三季度安全漏洞复盘会议', startTime: '2024-07-20 14:30:00', status: '进行中', creator: '专家A', createTime: '2024-07-14 11:00:00', updateTime: '2024-07-14 11:00:00' },
             { id: 3, meetingId: 'M-20240710-005', topic: '上半年安全总结', startTime: '2024-07-10 09:00:00', status: '已结束', creator: '专家A', createTime: '2024-07-01 16:45:00', updateTime: '2024-07-01 16:45:00' },
         ],
+        bugData: [],
+        meetData:[],
         isModalVisible: false,
         editingRecord: null,
         form: this.$form.createForm(this),
@@ -141,13 +144,25 @@ export default {
       },
 
         // 2. 获取漏洞列表
-        fetchVulnerabilities() {
-            // GET /api/expert/vulnerabilities
-            // 返回格式: [{ id: 1, cveId: '...', ... }, ...]
-            console.log("正在从后端获取漏洞列表...");
-            // axios.get('/api/expert/vulnerabilities').then(response => {
-            //     this.vulnerabilityData = response.data;
-            // });
+        async fetchVulnerabilities() {
+            try{
+                const userId = this.$store.getters['auth/userId']
+                const response = await api.get('api/eval/page',{
+                    params:{
+                        expertId: userId,
+                        isGroupEval: 1,
+                    }
+            });
+            if(response.succeed){
+                this.bugData = response.data;
+            }else{
+                message.error("获取漏洞列表失败");
+            }
+            }
+            catch(error){
+                console.error("API请求失败:", error);
+                message.error("获取漏洞数据失败");
+            }
         },
 
         // 3. 获取主持的会议列表

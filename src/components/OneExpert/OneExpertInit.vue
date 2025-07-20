@@ -2,7 +2,22 @@
   <div class="one-expert-init-container">
       <h1>尊敬的专家您好，待审漏洞:{{statistic.pending}}个,草稿:{{statistic.draft}}个,已完成漏洞:{{statistic.completed}}个</h1>
       
-      <a-table :columns="bugColumns" :data-source="bugData" rowKey="id" bordered style="margin-top: 24px;">
+      <a-table
+        :columns="bugColumns"
+        :data-source="bugData"
+        :pagination="{
+          current: page,
+          pageSize: size,
+          total: total,
+          showTotal: total => `共 ${total} 条`,
+          showQuickJumper: true,
+          showSizeChanger: true
+        }"
+        @change="handleTableChange"
+        rowKey="id"
+        bordered
+        style="margin-top: 24px;"
+      >
         <span slot="action">
           <a-button type="primary" ghost class="spec-link-button" @click="viewDetail()">详情</a-button>
         </span>
@@ -46,11 +61,10 @@ export default {
         completed: '',
         draft:'',
       },
-      Data: [
-        { id: 1, cveId: 'CVE-2024-0001', cveType: '远程代码执行', softwareType: '操作系统', title: 'Windows提权漏洞', desc: '攻击者可利用该漏洞提升权限。', status: '待审核' },
-        { id: 2, cveId: 'CVE-2024-0002', cveType: '信息泄露', softwareType: '数据库', title: 'MySQL未授权访问', desc: '未授权用户可读取敏感数据。', status: '草稿' },
-        { id: 3, cveId: 'CVE-2024-0003', cveType: '拒绝服务', softwareType: 'Web服务器', title: 'Apache崩溃漏洞', desc: '特定请求可导致服务崩溃。', status: '确认' },
-      ],
+      Data: [],
+      page: 1,
+      size: 10,
+      total: 0,
     };
   },
   created(){
@@ -81,16 +95,20 @@ export default {
           message.error("获取数据失败",error);
         }
       },
-      async fetchBugList(){
-        try{
+      async fetchBugList(page = this.page, size = this.size) {
+        try {
           const userId = this.$store.getters['auth/userId']
-          const response = await api.get('api/eval/page',{
-            params:{
+          const response = await api.get('api/eval/page', {
+            params: {
               expertId: userId,
+              isGroupEval: 0,
+              page,
+              size,
             }
           });
           if(response.succeed){
-            this.Data = response.data;
+            this.Data = response.data.records;
+            this.total = response.total;
           }else{
             message.error("获取漏洞列表失败");
           }
@@ -99,6 +117,9 @@ export default {
           console.error("API请求失败:", error);
           message.error("获取漏洞数据失败");
         }
+      },
+      handleTableChange(pagination) {
+        this.fetchBugList(pagination.current, pagination.pageSize);
       },
   }
 }

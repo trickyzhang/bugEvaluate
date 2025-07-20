@@ -26,7 +26,7 @@
           <a-form-item>
             <a-button
               type="primary"
-              @click="fakeLogin"
+              @click="login"
               :loading="loading"
               size="large"
               class="login-button"
