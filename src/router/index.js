@@ -88,6 +88,7 @@ const router = new VueRouter({
   ]
 });
 
+/*
 router.beforeEach((to, from, next) => {
   const isAuthenticated = localStorage.getItem('auth_token');
   if (to.path !== '/login' && !isAuthenticated) {
@@ -95,6 +96,6 @@ router.beforeEach((to, from, next) => {
   } else {
     next();
   }
-});
+});*/
 
 export default router;
