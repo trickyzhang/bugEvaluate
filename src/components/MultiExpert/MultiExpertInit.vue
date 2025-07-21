@@ -131,9 +131,9 @@ export default {
             }
           });
           if(response.succeed){
-            this.statistic.completed  = response.data.completed;
-            this.statistic.pending = response.data.pending;
-            this.statistic.draft = response.data.draft;
+            this.statistic.completed  = response.data.data.completed;
+            this.statistic.pending = response.data.data.pending;
+            this.statistic.draft = response.data.data.draft;
           }else{
             message.error("获取静态数据失败");
           }
@@ -154,7 +154,7 @@ export default {
                     }
             });
             if(response.succeed){
-                this.bugData = response.data;
+                this.bugData = response.data.data;
             }else{
                 message.error("获取漏洞列表失败");
             }
@@ -166,13 +166,25 @@ export default {
         },
 
         // 3. 获取主持的会议列表
-        fetchMeetings() {
-            // GET /api/expert/meetings
-            // 返回格式: [{ id: 1, meetingId: '...', ... }, ...]
-            console.log("正在从后端获取会议列表...");
-            // axios.get('/api/expert/meetings').then(response => {
-            //     this.meetingData = response.data;
-            // });
+        async fetchMeetings() {
+            try{
+                const userId = this.$store.getters['auth/userId']
+                const response = await api.get('api/group-meeting/page',{
+                    params:{
+                        expertId: userId,
+                        isGroupEval: 1,
+                    }
+            });
+            if(response.succeed){
+                this.meetData = response.data.data;
+            }else{
+                message.error("获取会议列表失败");
+            }
+            }
+            catch(error){
+                console.error("API请求失败:", error);
+                message.error("获取会议数据失败");
+            }
         },
 
         // 4. 更新会议信息
