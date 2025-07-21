@@ -5,7 +5,7 @@
         <a-form :form="form" :rules="rules" ref="formRef">
           <a-form-item prop="username">
             <a-input
-              v-model="form.username"
+              v-decorator="['username', { rules: rules.username }]"
               placeholder="请输入用户名"
               size="large"
             >
@@ -15,7 +15,7 @@
   
           <a-form-item prop="password">
             <a-input-password
-              v-model="form.password"
+              v-decorator="['password', { rules: rules.password }]"
               placeholder="请输入密码"
               size="large"
             >
