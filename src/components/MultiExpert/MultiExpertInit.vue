@@ -3,14 +3,28 @@
         <h1>尊敬的专家您好，待审漏洞:{{ statistic.pending }}个,草稿：{{ statistic.draft }}, 已完成漏洞:{{ statistic.completed }}个, 主持会议:{{ statistic.meetings }}个</h1>
 
         <h2 style="margin-top: 32px;">我主持的会议</h2>
-        <a-table :columns="meetingColumns" :data-source="meetingData" rowKey="id" bordered>
+        <a-table :columns="meetingColumns" :data-source="meetData" rowKey="id" bordered
+                 :pagination="{
+                   current: meetingPagination.current,
+                   pageSize: meetingPagination.pageSize,
+                   total: meetingPagination.total,
+                   showTotal: total => `共 ${total} 条`,
+                   onChange: handleMeetingPageChange
+                 }">
           <span slot="action" slot-scope="text, record">
             <a-button type="primary" ghost class="spec-link-button" @click="handleEditMeeting(record)">编辑</a-button>
           </span>
         </a-table>
 
         <h2 style="margin-top: 32px;">漏洞列表</h2>
-        <a-table :columns="vulnerabilityColumns" :data-source="vulnerabilityData" rowKey="id" bordered style="margin-top: 24px;">
+        <a-table :columns="vulnerabilityColumns" :data-source="bugData" rowKey="id" bordered style="margin-top: 24px;"
+                 :pagination="{
+                   current: vulnerabilityPagination.current,
+                   pageSize: vulnerabilityPagination.pageSize,
+                   total: vulnerabilityPagination.total,
+                   showTotal: total => `共 ${total} 条`,
+                   onChange: handleVulnPageChange
+                 }">
           <span slot="action">
             <a-button type="primary" ghost class="spec-link-button" @click="attendMeeting()">加入会议</a-button>
           </span>
@@ -67,6 +81,17 @@ export default {
           draft: 0,
           meetings: 0,
         },
+        // 分页参数
+        vulnerabilityPagination: {
+          current: 1,
+          pageSize: 10,
+          total: 0,
+        },
+        meetingPagination: {
+          current: 1,
+          pageSize: 10,
+          total: 0,
+        },
         // 漏洞表格的表头
         vulnerabilityColumns: [
           { title: 'id', dataIndex: 'id', key: 'id' },
@@ -111,8 +136,8 @@ export default {
     },
     created() {
         this.fetchStatistics();
-        // this.fetchVulnerabilities();
-        // this.fetchMeetings();
+        this.fetchVulnerabilities();
+        this.fetchMeetings();
     },
     methods: {
         /**
@@ -130,10 +155,10 @@ export default {
               expertId: userId,
             }
           });
-          if(response.succeed){
-            this.statistic.completed  = response.data.data.completed;
-            this.statistic.pending = response.data.data.pending;
-            this.statistic.draft = response.data.data.draft;
+          if(response.data.succeed){
+            this.statistic.completed  = response.data.data.CONFIRMED;
+            this.statistic.pending = response.data.data.INIT;
+            this.statistic.draft = response.data.data.DRAFT;
           }else{
             message.error("获取静态数据失败");
           }
@@ -144,17 +169,22 @@ export default {
       },
 
         // 2. 获取漏洞列表
-        async fetchVulnerabilities() {
+        async fetchVulnerabilities(page = 1, size = 10) {
             try{
                 const userId = this.$store.getters['auth/userId']
                 const response = await api.get('api/eval/page',{
                     params:{
                         expertId: userId,
                         isGroupEval: 1,
+                        page,
+                        size,
                     }
             });
-            if(response.succeed){
-                this.bugData = response.data.data;
+            if(response.data.succeed){
+                this.bugData = response.data.data.records;
+                this.vulnerabilityPagination.total = response.data.data.total ;
+                this.vulnerabilityPagination.current = response.data.data.page;
+                this.vulnerabilityPagination.pageSize = response.data.data.size;
             }else{
                 message.error("获取漏洞列表失败");
             }
@@ -166,17 +196,21 @@ export default {
         },
 
         // 3. 获取主持的会议列表
-        async fetchMeetings() {
+        async fetchMeetings(page = 1, size = 10) {
             try{
                 const userId = this.$store.getters['auth/userId']
                 const response = await api.get('api/group-meeting/page',{
                     params:{
                         expertId: userId,
-                        isGroupEval: 1,
+                        page,
+                        size,
                     }
             });
-            if(response.succeed){
-                this.meetData = response.data.data;
+            if(response.data.succeed){
+                this.meetData = response.data.records ;
+                this.meetingPagination.total = response.data.data.total ;
+                this.meetingPagination.current = response.data.data.page;
+                this.meetingPagination.pageSize = response.data.data.size;
             }else{
                 message.error("获取会议列表失败");
             }
@@ -189,12 +223,21 @@ export default {
 
         // 4. 更新会议信息
         async updateMeeting(meetingData) {
-            // PUT /api/expert/meetings/{id}
-            // 请求体: { topic: '...', startTime: '...' }
-            console.log(`正在向后端更新会议 (ID: ${meetingData.id})...`);
-            console.log("更新数据:", meetingData);
-            // return axios.put(`/api/expert/meetings/${meetingData.id}`, meetingData);
-            return new Promise(resolve => setTimeout(() => resolve({ success: true }), 500)); // 模拟API成功响应
+            try {
+                // 调用后端接口更新会议信息
+                const response = await api.put(`api/meetings/${meetingData.id}`, {
+                    topic: meetingData.topic,
+                    startTime: meetingData.startTime,
+                });
+                if (response.data.succeed) {
+                    return response;
+                } else {
+                    throw new Error('更新会议信息失败');
+                }
+            } catch (error) {
+                message.error('更新会议信息失败');
+                throw error;
+            }
         },
 
 
@@ -251,6 +294,12 @@ export default {
         // 跳转至会议详情页
         attendMeeting(){
             this.$router.push('/multiexpert/detail');
+        },
+        handleMeetingPageChange(page, pageSize) {
+            this.fetchMeetings(page, pageSize);
+        },
+        handleVulnPageChange(page, pageSize) {
+            this.fetchVulnerabilities(page, pageSize);
         }
     }
 }

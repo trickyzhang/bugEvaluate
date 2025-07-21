@@ -78,15 +78,15 @@ export default {
       async fetchStatistics(){
         try{
           const userId = this.$store.getters['auth/userId']
-          const response = await api.get('api/',{
+          const response = await api.get('api/eval/status-count',{
             params:{
               expertId: userId,
             }
           });
-          if(response.succeed){
-            this.statistic.completed  = response.data.completed;
-            this.statistic.pending = response.data.pending;
-            this.statistic.draft = response.data.draft;
+          if(response.data.succeed){
+            this.statistic.completed  = response.data.data.CONFIRMED;
+            this.statistic.pending = response.data.data.INIT;
+            this.statistic.draft = response.data.data.DRAFT;
           }else{
             message.error("获取静态数据失败");
           }
@@ -106,9 +106,9 @@ export default {
               size,
             }
           });
-          if(response.succeed){
+          if(response.data.succeed){
             this.Data = response.data.data.records;
-            this.total = response.data.total;
+            this.total = response.data.data.total;
           }else{
             message.error("获取漏洞列表失败");
           }
