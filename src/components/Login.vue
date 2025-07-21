@@ -79,8 +79,8 @@
                 userAccount : values.username,
                 userPassword : values.password,
               });
-              if(response.succeed){
-                this.$store.dispatch('auth/login', response.data);
+              if(response.data.succeed){
+                this.$store.dispatch('auth/login', response.data.data);
                 this.$router.push('/oneexpert');
               }else{
                 message.error('登录失败，请检查用户名或密码');

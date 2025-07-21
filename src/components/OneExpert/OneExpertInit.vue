@@ -4,7 +4,7 @@
       
       <a-table
         :columns="bugColumns"
-        :data-source="bugData"
+        :data-source="Data"
         :pagination="{
           current: page,
           pageSize: size,
@@ -107,8 +107,8 @@ export default {
             }
           });
           if(response.succeed){
-            this.Data = response.data.records;
-            this.total = response.total;
+            this.Data = response.data.data.records;
+            this.total = response.data.total;
           }else{
             message.error("获取漏洞列表失败");
           }
