@@ -188,7 +188,7 @@ export default {
         },
 
         // 4. 更新会议信息
-        updateMeeting(meetingData) {
+        async updateMeeting(meetingData) {
             // PUT /api/expert/meetings/{id}
             // 请求体: { topic: '...', startTime: '...' }
             console.log(`正在向后端更新会议 (ID: ${meetingData.id})...`);
