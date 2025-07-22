@@ -264,14 +264,12 @@ export default {
             this.editingRecord = null;
         },
 
-        // 修改处：跳转至会议详情页，并附带ID
         attendMeeting(record){
             if (record && record.evalId) {
                 // 使用 path 和 query 参数进行跳转
-                // 这会导航到 /multiexpert/detail?id=xxx
                 this.$router.push({ path: '/multiexpert/detail', query: { id: record.evalId } });
             } else {
-                message.error("无法获取当前漏洞的ID！");
+                message.error("无法获取当前漏洞的ID");
             }
         },
         handleMeetingPageChange(page, pageSize) {
