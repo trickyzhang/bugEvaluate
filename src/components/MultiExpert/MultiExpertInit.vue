@@ -13,8 +13,8 @@
         <h2 style="margin-top: 32px;">漏洞列表</h2>
         <a-table :columns="vulnerabilityColumns" :data-source="bugData" rowKey="evalId" bordered style="margin-top: 24px;"
                  :pagination="vulnerabilityPagination">
-          <span slot="action">
-            <a-button type="primary" ghost class="spec-link-button" @click="attendMeeting()">加入会议</a-button>
+          <span slot="action" slot-scope="text, record">
+            <a-button type="primary" ghost class="spec-link-button" @click="attendMeeting(record)">加入会议</a-button>
           </span>
         </a-table>
 
@@ -95,12 +95,6 @@ export default {
         { title: '审核情况', dataIndex: 'evalReportStatus', key: 'evalReportStatus' },
         { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
         ],
-        // 漏洞表格的静态数据
-        vulnerabilityData: [
-          { id: 1, cveId: 'CVE-2024-0001', cveType: '远程代码执行', softwareType: '操作系统', title: 'Windows提权漏洞', desc: '攻击者可利用该漏洞提升权限。', status: '待审核' },
-          { id: 2, cveId: 'CVE-2024-0002', cveType: '信息泄露', softwareType: '数据库', title: 'MySQL未授权访问', desc: '未授权用户可读取敏感数据。', status: '草稿' },
-          { id: 3, cveId: 'CVE-2024-0003', cveType: '拒绝服务', softwareType: 'Web服务器', title: 'Apache崩溃漏洞', desc: '特定请求可导致服务崩溃。', status: '确认' },
-        ],
         // 主持会议表格的表头
         meetingColumns: [
             { title: '编号', dataIndex: 'meetingId', key: 'meetingId' },
@@ -111,12 +105,6 @@ export default {
             { title: '创建者ID', dataIndex: 'creatorId', key: 'creatorId' },
             { title: '创建专家', dataIndex: 'creatorAccount', key: 'creatorAccount' },
             { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
-        ],
-        // 主持会议表格的静态数据
-        meetingData: [
-            { id: 1, meetingId: 'M-20240715-001', topic: '关于CVE-2024-0001的紧急研讨', startTime: '2024-07-16 10:00:00', status: '初始', creator: '专家A', createTime: '2024-07-15 09:00:00', updateTime: '2024-07-15 09:00:00' },
-            { id: 2, meetingId: 'M-20240715-002', topic: '第三季度安全漏洞复盘会议', startTime: '2024-07-20 14:30:00', status: '进行中', creator: '专家A', createTime: '2024-07-14 11:00:00', updateTime: '2024-07-14 11:00:00' },
-            { id: 3, meetingId: 'M-20240710-005', topic: '上半年安全总结', startTime: '2024-07-10 09:00:00', status: '已结束', creator: '专家A', createTime: '2024-07-01 16:45:00', updateTime: '2024-07-01 16:45:00' },
         ],
         bugData: [],
         meetData:[],
@@ -160,78 +148,80 @@ export default {
       },
 
         // 2. 获取漏洞列表
-async fetchVulnerabilities(page = 1, size = 5) {
-    try{
-        const userId = this.$store.getters['auth/userId']
-        const response = await api.get('api/eval/page',{
-            params:{
-                expertId: userId,
-                isGroupEval: 1,
-                page,
-                size,
-            }
-    });
-    if(response.data.succeed){
-        const data = response.data.data || {};
-        this.bugData = data.records || [];
-  
-        this.vulnerabilityPagination.total = Number(data.total) || 0;
-        this.vulnerabilityPagination.current = page;
-        this.vulnerabilityPagination.pageSize = Number(data.size) || 5;
+        async fetchVulnerabilities(page = 1, size = 5) {
+            try{
+                const userId = this.$store.getters['auth/userId']
+                const response = await api.get('api/eval/page',{
+                    params:{
+                        expertId: userId,
+                        isGroupEval: 1,
+                        page,
+                        size,
+                    }
+            });
+            if(response.data.succeed){
+                const data = response.data.data || {};
+                this.bugData = data.records || [];
+        
+                this.vulnerabilityPagination.total = Number(data.total) || 0;
+                this.vulnerabilityPagination.current = page;
+                this.vulnerabilityPagination.pageSize = Number(data.size) || 5;
 
-    }else{
-        message.error("获取漏洞列表失败");
-    }
-    }
-    catch(error){
-        console.error("API请求失败:", error);
-        message.error("获取漏洞数据失败");
-    }
-},
-        // 3. 获取主持的会议列表
-async fetchMeetings(page = 1, size = 10) {
-    try{
-        const userId = this.$store.getters['auth/userId']
-        const response = await api.get('api/group-meeting/page',{
-            params:{
-                expertId: userId,
-                page,
-                size,
+            }else{
+                message.error("获取漏洞列表失败");
             }
-    });
-    if(response.data.succeed){
-        const data = response.data.data || {};
-        this.meetData = data.records || [];
-        this.meetingPagination.total = Number(data.total) || 0 ;
-        this.meetingPagination.current = page;
-        this.meetingPagination.pageSize = Number(data.size) || 10;
-   
-    }else{
-        message.error("获取会议列表失败");
-    }
-    }
-    catch(error){
-        console.error("API请求失败:", error);
-        message.error("获取会议数据失败");
-    }
-},
+            }
+            catch(error){
+                console.error("API请求失败:", error);
+                message.error("获取漏洞数据失败");
+            }
+        },
+        // 3. 获取主持的会议列表
+        async fetchMeetings(page = 1, size = 10) {
+            try{
+                const userId = this.$store.getters['auth/userId']
+                const response = await api.get('api/group-meeting/page',{
+                    params:{
+                        expertId: userId,
+                        page,
+                        size,
+                    }
+            });
+            if(response.data.succeed){
+                const data = response.data.data || {};
+                this.meetData = data.records || [];
+                this.meetingPagination.total = Number(data.total) || 0 ;
+                this.meetingPagination.current = page;
+                this.meetingPagination.pageSize = Number(data.size) || 10;
+        
+            }else{
+                message.error("获取会议列表失败");
+            }
+            }
+            catch(error){
+                console.error("API请求失败:", error);
+                message.error("获取会议数据失败");
+            }
+        },
 
         // 4. 更新会议信息
         async updateMeeting(meetingData) {
+            // 注意：这里的接口路径是 put 'api/group-meeting/update'
             try {
-                // 调用后端接口更新会议信息
-                const response = await api.put(`api/meetings/${meetingData.meetingId}`, {
-                    topic: meetingData.meetingTopic,
-                    startTime: meetingData.meetingStart,
+                const response = await api.put(`api/group-meeting/update`, {
+                    meetingId: meetingData.meetingId,
+                    meetingTopic: meetingData.meetingTopic,
+                    meetingStart: meetingData.meetingStart,
                 });
                 if (response.data.succeed) {
-                    return response;
+                    message.success('更新会议信息成功');
+                    this.fetchMeetings(this.meetingPagination.current, this.meetingPagination.pageSize); // 重新加载数据
                 } else {
-                    throw new Error('更新会议信息失败');
+                    message.error(response.data.message || '更新会议信息失败');
                 }
             } catch (error) {
-                message.error('更新会议信息失败');
-                throw error;
+                message.error('请求失败：更新会议信息时发生错误');
+                console.error(error);
             }
         },
 
@@ -256,25 +246,14 @@ async fetchMeetings(page = 1, size = 10) {
                 if (!err) {
                     const formattedStartTime = values.startTime.format('YYYY-MM-DD HH:mm:ss');
                     const updatedData = {
-                        ...this.editingRecord,
-                        meetingTopic: values.topic,      // 注意字段名
-                        meetingStart: formattedStartTime // 注意字段名
+                        meetingId: this.editingRecord.meetingId,
+                        meetingTopic: values.topic,
+                        meetingStart: formattedStartTime
                     };
                     
-                    // 调用API更新后端数据
-                    this.updateMeeting(updatedData).then(() => {
-                        // 在前端同步更新数据
-                        const index = this.meetingData.findIndex(item => item.id === this.editingRecord.id);
-                        if (index !== -1) {
-                            this.meetingData[index].meetingTopic = values.topic;
-                            this.meetingData[index].meetingStart = formattedStartTime;
-                        }
-                        this.isModalVisible = false;
-                        this.editingRecord = null;
-                        this.$message.success('会议信息更新成功!');
-                    }).catch(() => {
-                        this.$message.error('更新失败，请重试!');
-                    });
+                    this.updateMeeting(updatedData);
+                    this.isModalVisible = false;
+                    this.editingRecord = null;
                 }
             });
         },
@@ -285,9 +264,15 @@ async fetchMeetings(page = 1, size = 10) {
             this.editingRecord = null;
         },
 
-        // 跳转至会议详情页
-        attendMeeting(){
-            this.$router.push('/multiexpert/detail');
+        // 修改处：跳转至会议详情页，并附带ID
+        attendMeeting(record){
+            if (record && record.evalId) {
+                // 使用 path 和 query 参数进行跳转
+                // 这会导航到 /multiexpert/detail?id=xxx
+                this.$router.push({ path: '/multiexpert/detail', query: { id: record.evalId } });
+            } else {
+                message.error("无法获取当前漏洞的ID！");
+            }
         },
         handleMeetingPageChange(page, pageSize) {
             this.fetchMeetings(page, pageSize);
