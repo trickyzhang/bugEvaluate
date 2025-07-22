@@ -18,8 +18,8 @@
         bordered
         style="margin-top: 24px;"
       >
-        <span slot="action">
-          <a-button type="primary" ghost class="spec-link-button" @click="viewDetail()">详情</a-button>
+        <span slot="action" slot-scope="text, record">
+          <a-button type="primary" ghost class="spec-link-button" @click="viewDetail(record)">详情</a-button>
         </span>
       </a-table>
 
@@ -72,8 +72,18 @@ export default {
     this.fetchBugList();
   },
   methods: {
-      viewDetail() {
-        this.$router.push('/oneexpert/detail');
+      /**
+       * @description 跳转到详情页
+       * @param {object} record - 当前行的数据对象
+       */
+      viewDetail(record) {
+        if (record && record.evalId) {
+          // 使用 path 和 query 参数进行跳转
+          // 这会导航到 /oneexpert/detail?id=xxx
+          this.$router.push({ path: '/oneexpert/detail', query: { id: record.evalId } });
+        } else {
+          message.error("无法获取当前漏洞的ID");
+        }
       },
       async fetchStatistics(){
         try{
