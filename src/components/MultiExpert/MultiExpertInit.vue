@@ -3,28 +3,16 @@
         <h1>尊敬的专家您好，待审漏洞:{{ statistic.pending }}个,草稿：{{ statistic.draft }}, 已完成漏洞:{{ statistic.completed }}个, 主持会议:{{ statistic.meetings }}个</h1>
 
         <h2 style="margin-top: 32px;">我主持的会议</h2>
-        <a-table :columns="meetingColumns" :data-source="meetData" rowKey="id" bordered
-                 :pagination="{
-                   current: meetingPagination.current,
-                   pageSize: meetingPagination.pageSize,
-                   total: meetingPagination.total,
-                   showTotal: total => `共 ${total} 条`,
-                   onChange: handleMeetingPageChange
-                 }">
+        <a-table :columns="meetingColumns" :data-source="meetData" rowKey="meetingId" bordered
+                 :pagination="meetingPagination">
           <span slot="action" slot-scope="text, record">
             <a-button type="primary" ghost class="spec-link-button" @click="handleEditMeeting(record)">编辑</a-button>
           </span>
         </a-table>
 
         <h2 style="margin-top: 32px;">漏洞列表</h2>
-        <a-table :columns="vulnerabilityColumns" :data-source="bugData" rowKey="id" bordered style="margin-top: 24px;"
-                 :pagination="{
-                   current: vulnerabilityPagination.current,
-                   pageSize: vulnerabilityPagination.pageSize,
-                   total: vulnerabilityPagination.total,
-                   showTotal: total => `共 ${total} 条`,
-                   onChange: handleVulnPageChange
-                 }">
+        <a-table :columns="vulnerabilityColumns" :data-source="bugData" rowKey="evalId" bordered style="margin-top: 24px;"
+                 :pagination="vulnerabilityPagination">
           <span slot="action">
             <a-button type="primary" ghost class="spec-link-button" @click="attendMeeting()">加入会议</a-button>
           </span>
@@ -84,24 +72,28 @@ export default {
         // 分页参数
         vulnerabilityPagination: {
           current: 1,
-          pageSize: 10,
+          pageSize: 5,
           total: 0,
+          showTotal: total => `共 ${total} 条`,
+          onChange: (page, pageSize) => this.handleVulnPageChange(page, pageSize)
         },
         meetingPagination: {
           current: 1,
           pageSize: 10,
           total: 0,
+          showTotal: total => `共 ${total} 条`,
+          onChange: (page, pageSize) => this.handleMeetingPageChange(page, pageSize)
         },
         // 漏洞表格的表头
         vulnerabilityColumns: [
-          { title: 'id', dataIndex: 'id', key: 'id' },
-          { title: 'CVE编号', dataIndex: 'cveId', key: 'cveId' },
-          { title: 'CVE类型', dataIndex: 'cveType', key: 'cveType' },
-          { title: '软件类型', dataIndex: 'softwareType', key: 'softwareType' },
-          { title: '漏洞标题', dataIndex: 'title', key: 'title' },
-          { title: '描述', dataIndex: 'desc', key: 'desc' },
-          { title: '审核情况', dataIndex: 'status', key: 'status' },
-          { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
+        { title: 'id', dataIndex: 'evalId', key: 'evalId' },
+        { title: 'CVE编号', dataIndex: 'cveId', key: 'cveId' },
+        { title: 'CVE类型', dataIndex: 'cveType', key: 'cveType' },
+        { title: '软件类型', dataIndex: 'softwareType', key: 'softwareType' },
+        { title: '漏洞标题', dataIndex: 'cveTitle', key: 'cveTitle' },
+        { title: '描述', dataIndex: 'cveDescription', key: 'cveDescription' },
+        { title: '审核情况', dataIndex: 'evalReportStatus', key: 'evalReportStatus' },
+        { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
         ],
         // 漏洞表格的静态数据
         vulnerabilityData: [
@@ -111,14 +103,13 @@ export default {
         ],
         // 主持会议表格的表头
         meetingColumns: [
-            { title: '编号', dataIndex: 'id', key: 'id' },
-            { title: '会议号', dataIndex: 'meetingId', key: 'meetingId' },
-            { title: '会议主题', dataIndex: 'topic', key: 'topic' },
-            { title: '开始时间', dataIndex: 'startTime', key: 'startTime' },
-            { title: '会议状态', dataIndex: 'status', key: 'status' },
-            { title: '创建者', dataIndex: 'creator', key: 'creator' },
-            { title: '创建时间', dataIndex: 'createTime', key: 'createTime' },
-            { title: '更新时间', dataIndex: 'updateTime', key: 'updateTime' },
+            { title: '编号', dataIndex: 'meetingId', key: 'meetingId' },
+            { title: '会议号', dataIndex: 'meetingCode', key: 'meetingCode' },
+            { title: '会议主题', dataIndex: 'meetingTopic', key: 'meetingTopic' },
+            { title: '开始时间', dataIndex: 'meetingStart', key: 'meetingStart' },
+            { title: '会议状态', dataIndex: 'meetingStatus', key: 'meetingStatus' },
+            { title: '创建者ID', dataIndex: 'creatorId', key: 'creatorId' },
+            { title: '创建专家', dataIndex: 'creatorAccount', key: 'creatorAccount' },
             { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
         ],
         // 主持会议表格的静态数据
@@ -150,7 +141,7 @@ export default {
         async fetchStatistics(){
         try{
           const userId = this.$store.getters['auth/userId']
-          const response = await api.get('api/',{
+          const response = await api.get('api/eval/status-count',{
             params:{
               expertId: userId,
             }
@@ -169,65 +160,69 @@ export default {
       },
 
         // 2. 获取漏洞列表
-        async fetchVulnerabilities(page = 1, size = 10) {
-            try{
-                const userId = this.$store.getters['auth/userId']
-                const response = await api.get('api/eval/page',{
-                    params:{
-                        expertId: userId,
-                        isGroupEval: 1,
-                        page,
-                        size,
-                    }
-            });
-            if(response.data.succeed){
-                this.bugData = response.data.data.records;
-                this.vulnerabilityPagination.total = response.data.data.total ;
-                this.vulnerabilityPagination.current = response.data.data.page;
-                this.vulnerabilityPagination.pageSize = response.data.data.size;
-            }else{
-                message.error("获取漏洞列表失败");
+async fetchVulnerabilities(page = 1, size = 5) {
+    try{
+        const userId = this.$store.getters['auth/userId']
+        const response = await api.get('api/eval/page',{
+            params:{
+                expertId: userId,
+                isGroupEval: 1,
+                page,
+                size,
             }
-            }
-            catch(error){
-                console.error("API请求失败:", error);
-                message.error("获取漏洞数据失败");
-            }
-        },
+    });
+    if(response.data.succeed){
+        const data = response.data.data || {};
+        this.bugData = data.records || [];
+  
+        this.vulnerabilityPagination.total = Number(data.total) || 0;
+        this.vulnerabilityPagination.current = page;
+        this.vulnerabilityPagination.pageSize = Number(data.size) || 5;
 
+    }else{
+        message.error("获取漏洞列表失败");
+    }
+    }
+    catch(error){
+        console.error("API请求失败:", error);
+        message.error("获取漏洞数据失败");
+    }
+},
         // 3. 获取主持的会议列表
-        async fetchMeetings(page = 1, size = 10) {
-            try{
-                const userId = this.$store.getters['auth/userId']
-                const response = await api.get('api/group-meeting/page',{
-                    params:{
-                        expertId: userId,
-                        page,
-                        size,
-                    }
-            });
-            if(response.data.succeed){
-                this.meetData = response.data.records ;
-                this.meetingPagination.total = response.data.data.total ;
-                this.meetingPagination.current = response.data.data.page;
-                this.meetingPagination.pageSize = response.data.data.size;
-            }else{
-                message.error("获取会议列表失败");
+async fetchMeetings(page = 1, size = 10) {
+    try{
+        const userId = this.$store.getters['auth/userId']
+        const response = await api.get('api/group-meeting/page',{
+            params:{
+                expertId: userId,
+                page,
+                size,
             }
-            }
-            catch(error){
-                console.error("API请求失败:", error);
-                message.error("获取会议数据失败");
-            }
-        },
+    });
+    if(response.data.succeed){
+        const data = response.data.data || {};
+        this.meetData = data.records || [];
+        this.meetingPagination.total = Number(data.total) || 0 ;
+        this.meetingPagination.current = page;
+        this.meetingPagination.pageSize = Number(data.size) || 10;
+   
+    }else{
+        message.error("获取会议列表失败");
+    }
+    }
+    catch(error){
+        console.error("API请求失败:", error);
+        message.error("获取会议数据失败");
+    }
+},
 
         // 4. 更新会议信息
         async updateMeeting(meetingData) {
             try {
                 // 调用后端接口更新会议信息
-                const response = await api.put(`api/meetings/${meetingData.id}`, {
-                    topic: meetingData.topic,
-                    startTime: meetingData.startTime,
+                const response = await api.put(`api/meetings/${meetingData.meetingId}`, {
+                    topic: meetingData.meetingTopic,
+                    startTime: meetingData.meetingStart,
                 });
                 if (response.data.succeed) {
                     return response;
@@ -249,8 +244,8 @@ export default {
             // 使用 nextTick 确保 Modal 已经渲染
             this.$nextTick(() => {
                 this.form.setFieldsValue({
-                    topic: record.topic,
-                    startTime: moment(record.startTime, 'YYYY-MM-DD HH:mm:ss')
+                    topic: record.meetingTopic,
+                    startTime: moment(record.meetingStart, 'YYYY-MM-DD HH:mm:ss')
                 });
             });
         },
@@ -262,8 +257,8 @@ export default {
                     const formattedStartTime = values.startTime.format('YYYY-MM-DD HH:mm:ss');
                     const updatedData = {
                         ...this.editingRecord,
-                        topic: values.topic,
-                        startTime: formattedStartTime,
+                        meetingTopic: values.topic,      // 注意字段名
+                        meetingStart: formattedStartTime // 注意字段名
                     };
                     
                     // 调用API更新后端数据
@@ -271,9 +266,8 @@ export default {
                         // 在前端同步更新数据
                         const index = this.meetingData.findIndex(item => item.id === this.editingRecord.id);
                         if (index !== -1) {
-                            this.meetingData[index].topic = values.topic;
-                            this.meetingData[index].startTime = formattedStartTime;
-                            this.meetingData[index].updateTime = moment().format('YYYY-MM-DD HH:mm:ss');
+                            this.meetingData[index].meetingTopic = values.topic;
+                            this.meetingData[index].meetingStart = formattedStartTime;
                         }
                         this.isModalVisible = false;
                         this.editingRecord = null;

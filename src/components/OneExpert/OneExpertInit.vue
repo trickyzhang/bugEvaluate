@@ -14,7 +14,7 @@
           showSizeChanger: true
         }"
         @change="handleTableChange"
-        rowKey="id"
+        rowKey="evalId"
         bordered
         style="margin-top: 24px;"
       >
@@ -42,19 +42,19 @@ export default {
   data() {
     return {
       bugColumns: [
-        { title: 'id', dataIndex: 'id', key: 'id' },
+        { title: 'id', dataIndex: 'evalId', key: 'evalId' },
         { title: 'CVE编号', dataIndex: 'cveId', key: 'cveId' },
         { title: 'CVE类型', dataIndex: 'cveType', key: 'cveType' },
         { title: '软件类型', dataIndex: 'softwareType', key: 'softwareType' },
-        { title: '漏洞标题', dataIndex: 'title', key: 'title' },
-        { title: '描述', dataIndex: 'desc', key: 'desc' },
-        { title: '审核情况', dataIndex: 'status', key: 'status' },
+        { title: '漏洞标题', dataIndex: 'cveTitle', key: 'cveTitle' },
+        { title: '描述', dataIndex: 'cveDescription', key: 'cveDescription' },
+        { title: '审核情况', dataIndex: 'evalReportStatus', key: 'evalReportStatus' },
         { title: '操作', key: 'action', scopedSlots: { customRender: 'action' } },
       ],
       bugData: [
-        { id: 1, cveId: 'CVE-2024-0001', cveType: '远程代码执行', softwareType: '操作系统', title: 'Windows提权漏洞', desc: '攻击者可利用该漏洞提升权限。', status: '待审核' },
-        { id: 2, cveId: 'CVE-2024-0002', cveType: '信息泄露', softwareType: '数据库', title: 'MySQL未授权访问', desc: '未授权用户可读取敏感数据。', status: '草稿' },
-        { id: 3, cveId: 'CVE-2024-0003', cveType: '拒绝服务', softwareType: 'Web服务器', title: 'Apache崩溃漏洞', desc: '特定请求可导致服务崩溃。', status: '确认' },
+        { evalId: 1, cveId: 'CVE-2024-0001', cveType: '远程代码执行', softwareType: '操作系统', cveTitle: 'Windows提权漏洞', cveDescription: '攻击者可利用该漏洞提升权限。', evalReportStatus: '待审核' },
+        { evalId: 2, cveId: 'CVE-2024-0002', cveType: '信息泄露', softwareType: '数据库', cveTitle: 'MySQL未授权访问', cveDescription: '未授权用户可读取敏感数据。', evalReportStatus: '草稿' },
+        { evalTd: 3, cveId: 'CVE-2024-0003', cveType: '拒绝服务', softwareType: 'Web服务器', cveTitle: 'Apache崩溃漏洞', cveDescription: '特定请求可导致服务崩溃。', evalReportStatus: '确认' },
       ],
       statistic:{
         pending: '',
@@ -109,6 +109,7 @@ export default {
           if(response.data.succeed){
             this.Data = response.data.data.records;
             this.total = response.data.data.total;
+            this.page = page;
           }else{
             message.error("获取漏洞列表失败");
           }

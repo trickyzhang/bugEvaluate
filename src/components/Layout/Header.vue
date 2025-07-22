@@ -37,9 +37,12 @@ export default {
   data() {
     return {
       user: {
-        username: 'admin'
+        username: '',
       }
     };
+  },
+  created() {
+    this.user.username = this.$store.getters['auth/userInfo'].account;
   },
   computed: {
     breadcrumbs() {
