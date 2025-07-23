@@ -49,7 +49,7 @@
                             </a-col>
                             <a-col :span="12">
                                 <a-form-item label="情报字段3" :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }">
-                                    <span class="ant-form-text">{{ form.threatIntelligence.fieldN }}</span>
+                                    <span class="ant-form-text">{{ form.threatIntelligence.field3 }}</span>
                                 </a-form-item>
                             </a-col>
                         </a-row>
@@ -107,7 +107,7 @@
                     <a-form>
                         <a-row :gutter="16">
                             <a-col :span="12">
-                                <a-form-item label="整体价值" :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }">
+                                <a-form-item label="漏洞价值" :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }">
                                     <span class="ant-form-text">{{ form.explain.overallValue || '-' }}</span>
                                 </a-form-item>
                             </a-col>
@@ -366,7 +366,7 @@
         >
             <p style="margin-bottom: 16px; color: #999;">请修改以下字段，并填写修改理由。</p>
             <a-form>
-                <a-form-item label="整体价值" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
+                <a-form-item label="漏洞价值" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
                     <a-select v-model="explainabilityParams.overallValue" placeholder="请选择">
                         <a-select-option value="严重">严重</a-select-option>
                         <a-select-option value="一般">一般</a-select-option>
@@ -433,7 +433,7 @@ export default {
                     cveTitle: '',
                     cveDescription: '',
                 },
-                threatIntelligence: { field1: '', field2: '', fieldN: '' },
+                threatIntelligence: { field1: '', field2: '', field3: '' },
                 religion:{ field1:'', field2:'', },
                 autoSoft: { 
                     value: '',
@@ -516,7 +516,7 @@ export default {
                     if (data.threatIntel) {
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
                         this.form.threatIntelligence.field2 = data.threatIntel.field2;
-                        this.form.threatIntelligence.fieldN = data.threatIntel.field3;
+                        this.form.threatIntelligence.field3 = data.threatIntel.field3;
                     }
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
                         data.dimVOList.forEach(item => {
