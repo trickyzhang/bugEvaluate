@@ -365,16 +365,16 @@ export default {
       try {
         
         const response = await axios.post(AI_GENERATION_API_URL, {
-          session_id: this.currentChatId,
+          session_id: String(this.currentChatId),
           question: userMessage.content,
-          knowledge_base_ids: this.selectedKnowledgeBases, 
+          //knowledge_base_ids: this.selectedKnowledgeBases, 
         });
         
         this.isLoading = false; 
 
         const assistantReply = response.data.answer; 
         if (!assistantReply) {
-             throw new Error("API返回格式不正确，未找到'answer'字段");
+             throw new Error("API返回格式不正确,未找到'answer'字段");
         }
 
         const assistantMessage = {
