@@ -120,11 +120,9 @@ import axios from 'axios';
 import { marked } from 'marked'; 
 import api from '@/utils/axios';
 
-
-// This is the AI generation service endpoint from the original ChatDetail.vue
-// It is kept because '调用api.docx' does not provide an endpoint for generating AI responses.
+//多轮对话api
 const AI_GENERATION_API_URL = 'http://10.13.1.104:8002/api/chat/multi-chat'; 
-// --- END: API Integration ---
+
 
 const VULNERABILITY_TEMPLATE = `**漏洞评估请求**
 
@@ -170,7 +168,7 @@ export default {
       allMessages: {}, 
       currentChatId: null,
       isLoading: false,
-      isCreatingChat: false, // Loading state for creating a new chat
+      isCreatingChat: false, 
       inputFocused: false,
       isStreaming: false, 
       userId: this.$store.getters['auth/userId'] , 
@@ -200,21 +198,18 @@ export default {
     },
   },
   methods: {
-    // --- START: New methods for API interaction ---
-
     /**
-     * Fetches the list of past chat sessions from the server.
-     * API: GET api/chat-session/mine 
+     * 历史消息
      */
     async fetchChatHistory() {
         if (!this.userId) {
-            message.error("无法获取用户ID，请重新登录。");
+            message.error("无法获取用户ID,请重新登录。");
             return;
         }
         try {
             const response = await api.get('api/chat-session/mine', {
                 params: {
-                    userId: this.userId,  
+                    expertId: this.userId,  
                     page: 1, 
                     size: 10 
                 }
@@ -229,7 +224,7 @@ export default {
                 if (this.chatHistory.length > 0) {
                     this.selectChat(this.chatHistory[0].id);
                 } else {
-                    this.startNewChat(); // Create a new chat if history is empty
+                    this.startNewChat(); // 如果历史为空，需要创建对话
                 }
             } else {
                  message.error('加载历史会话失败: ' + (response.data.message || '未知错误'));
@@ -241,8 +236,7 @@ export default {
     },
     
     /**
-     * Fetches all messages for a selected chat session.
-     * API: GET api/chat-message/{sid}/turns 
+     * 获取单个对话的全部信息
      */
     async fetchChatMessages(sessionId) {
         this.$set(this.allMessages, sessionId, []); // Clear previous messages
@@ -278,15 +272,14 @@ export default {
     },
 
     /**
-     * Creates a new chat session on the server.
-     * API: POST api/chat-session/{expertId} 
+     * 创建新对话
      */
     async startNewChat() {
       this.isCreatingChat = true;
       try {
           const response = await api.post(`api/chat-session/${this.userId}`);
           if (response.data && response.data.succeed) {
-              const newChatData = response.data.data; // 
+              const newChatData = response.data.data;  
               const newChat = {
                 id: newChatData.sessionId,
                 title: newChatData.sessionTitle || '新的对话',
@@ -306,8 +299,7 @@ export default {
     },
 
     /**
-     * Saves a turn of conversation (user + assistant messages) to the server.
-     * API: POST api/chat-message 
+     * 保存一轮对话
      */
     async saveTurn(userMessage, assistantMessage) {
         try {
@@ -327,8 +319,7 @@ export default {
     },
 
     /**
-     * Updates the title of a chat session on the server.
-     * API: PUT api/chat-session 
+     * 更新对话标题
      */
     async updateChatTitle(sessionId, newTitle) {
         try {
@@ -347,7 +338,6 @@ export default {
         }
     },
 
-    // --- END: New methods for API interaction ---
 
     selectChat(chatId) {
       if (this.currentChatId === chatId) return;
@@ -356,7 +346,6 @@ export default {
       this.fetchChatMessages(chatId);
     },
     
-    // Original methods modified to use API calls
     async sendMessage() {
       const trimmedInput = this.userInput.trim();
       if (!trimmedInput || this.isLoading || this.isStreaming) return;
@@ -374,7 +363,7 @@ export default {
       this.isLoading = true;
       
       try {
-        // Step 1: Get AI response (using the original component's method, as this is not in '调用api.docx')
+        
         const response = await axios.post(AI_GENERATION_API_URL, {
           session_id: this.currentChatId,
           question: userMessage.content,
@@ -439,7 +428,6 @@ export default {
         }, 25); 
     },
 
-    // Unmodified helper methods
     loadVulnerabilityTemplate() {
         if (this.userInput.trim() && !confirm('当前输入框有内容，确定要使用模板覆盖吗？')) {
             return;
@@ -475,7 +463,6 @@ export default {
 </script>
 
 <style>
-/* --- Styles are unchanged, including .markdown-body and scoped styles --- */
 .markdown-body {
   box-sizing: border-box;
   min-width: 200px;

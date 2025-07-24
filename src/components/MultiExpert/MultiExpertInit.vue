@@ -244,7 +244,7 @@ export default {
         handleOk() {
             this.form.validateFields((err, values) => {
                 if (!err) {
-                    const formattedStartTime = values.startTime.format('YYYY-MM-DD HH:mm:ss');
+                    const formattedStartTime = values.startTime.format('YYYY-MM-DDTHH:mm:ss');
                     const updatedData = {
                         meetingId: this.editingRecord.meetingId,
                         meetingTopic: values.topic,
