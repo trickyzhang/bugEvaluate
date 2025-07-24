@@ -7,6 +7,7 @@
                  :pagination="meetingPagination">
           <span slot="action" slot-scope="text, record">
             <a-button type="primary" ghost class="spec-link-button" @click="handleEditMeeting(record)">编辑</a-button>
+            <a-button type="primary" ghost class="spec-link-button" @click="hostMeeting(record)">主持会议</a-button>
           </span>
         </a-table>
 
@@ -225,8 +226,6 @@ export default {
             }
         },
 
-
-
         // 处理编辑会议按钮点击事件
         handleEditMeeting(record) {
             this.editingRecord = record;
@@ -272,9 +271,25 @@ export default {
                 message.error("无法获取当前漏洞的ID");
             }
         },
+
+        hostMeeting(record){
+            if (record && record.meetingId) {
+                // 使用 path 和 query 参数进行跳转
+                this.$router.push({ path: '/multiexpert/host', 
+                    query: { 
+                        id: record.evalId, 
+                        meetingId: record.meetingId 
+                    } 
+                });
+            } else {
+                message.error("无法获取当前漏洞的ID和会议的ID");
+            }
+        },
+
         handleMeetingPageChange(page, pageSize) {
             this.fetchMeetings(page, pageSize);
         },
+
         handleVulnPageChange(page, pageSize) {
             this.fetchVulnerabilities(page, pageSize);
         }

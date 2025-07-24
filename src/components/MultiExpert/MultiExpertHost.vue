@@ -224,7 +224,7 @@
                     <div class="experts-list">
                         <div 
                             v-for="expert in expertList" 
-                            :key="expert.id" 
+                            :key="expert.mpId" 
                             class="expert-item"
                             :class="{ 'muted': expert.isMuted }"
                         >
@@ -246,53 +246,28 @@
                                 <a-button 
                                     :type="expert.isMuted ? 'primary' : 'default'"
                                     size="small"
-                                    @click="toggleExpertMute(expert.id)"
+                                    @click="toggleExpertMute(expert)"
                                 >
                                     <a-icon :type="expert.isMuted ? 'sound' : 'stop'" />
                                     {{ expert.isMuted ? '解除禁言' : '禁言' }}
                                 </a-button>
-                                <a-button 
-                                    type="default" 
-                                    size="small" 
-                                    @click="removeExpert(expert.id)"
+                                <a-button
+                                    v-if="expert.role !== '会议管理员'"
+                                    type="danger"
+                                    size="small"
+                                    @click="transferAdmin(expert)"
                                     style="margin-left: 8px;"
                                 >
-                                    <a-icon type="delete" />
-                                    移除
+                                    <a-icon type="crown" />
+                                    转让管理员
                                 </a-button>
                             </div>
                         </div>
                     </div>
-
-                    <div class="add-expert-section">
-                        <a-divider>添加专家</a-divider>
-                        <a-form layout="inline">
-                            <a-form-item label="选择专家">
-                                <a-select 
-                                    v-model="selectedExpertToAdd" 
-                                    placeholder="请选择要添加的专家"
-                                    style="width: 200px;"
-                                >
-                                    <a-select-option 
-                                        v-for="expert in availableExperts" 
-                                        :key="expert.id" 
-                                        :value="expert.id"
-                                    >
-                                        {{ expert.name }} - {{ expert.role }}
-                                    </a-select-option>
-                                </a-select>
-                            </a-form-item>
-                            <a-form-item>
-                                <a-button type="primary" @click="addExpert" :disabled="!selectedExpertToAdd">
-                                    添加专家
-                                </a-button>
-                            </a-form-item>
-                        </a-form>
-                    </div>
                 </a-card>
 
                 <div class="modal-footer">
-                    <a-button @click="handleHostModalCancel">取消</a-button>
+                    <a-button @click="handleHostModalCancel">关闭</a-button>
                     <a-button type="primary" @click="handleHostModalOk">开始会议</a-button>
                 </div>
             </div>
@@ -396,7 +371,7 @@
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Avatar, Tag, Divider, Icon } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Avatar, Tag, Icon } from 'ant-design-vue';
 import api from '@/utils/axios';
 
 export default {
@@ -420,7 +395,6 @@ export default {
         'a-modal': Modal,
         'a-avatar': Avatar,
         'a-tag': Tag,
-        'a-divider': Divider,
         'a-icon': Icon,
     },
     data() {
@@ -459,18 +433,7 @@ export default {
                 { user: '主持人', text: '大家好，会议现在开始。我们首先来讨论一下这个漏洞的评估结果。' },
                 { user: '张三', text: '好的，我先来分享一下我的看法...' },
             ],
-            expertList: [
-                { id: 'expert1', name: '张三', role: '安全专家', avatar: '', isMuted: false },
-                { id: 'expert2', name: '李四', role: '漏洞分析专家', avatar: '', isMuted: false },
-                { id: 'expert3', name: '王五', role: '风险评估专家', avatar: '', isMuted: false },
-                { id: 'expert4', name: '赵六', role: '威胁情报专家', avatar: '', isMuted: false }
-            ],
-            availableExperts: [
-                { id: 'expert5', name: '钱七', role: '网络架构专家' },
-                { id: 'expert6', name: '孙八', role: '数据安全专家' },
-                { id: 'expert7', name: '周九', role: '应用安全专家' }
-            ],
-            selectedExpertToAdd: undefined,
+            expertList: [], // 修改: 初始化为空数组，将通过API获取
             // 算法弹窗
             algorithmModalVisible: false,
             modalLoading: false,
@@ -559,34 +522,145 @@ export default {
                 if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
             });
         },
-        handleHost(){ this.hostModalVisible = true; },
+        handleHost(){ 
+            this.hostModalVisible = true;
+            this.getMeetingMembers();
+        },
         handleHostModalOk() { this.hostModalVisible = false; message.success('会议已开始'); },
         handleHostModalCancel() { this.hostModalVisible = false; },
-        toggleExpertMute(expertId) {
-            const expert = this.expertList.find(e => e.id === expertId);
-            if (expert) { expert.isMuted = !expert.isMuted; message.success(`${expert.name} ${expert.isMuted ? '已禁言' : '已解除禁言'}`); }
-        },
-        muteAllExperts() { this.expertList.forEach(expert => { expert.isMuted = true; }); message.success('全体专家已禁言'); },
-        unmuteAllExperts() { this.expertList.forEach(expert => { expert.isMuted = false; }); message.success('全体专家已解除禁言'); },
-        removeExpert(expertId) {
-            const expertIndex = this.expertList.findIndex(e => e.id === expertId);
-            if (expertIndex > -1) {
-                const removedExpert = this.expertList.splice(expertIndex, 1)[0];
-                this.availableExperts.push({ id: removedExpert.id, name: removedExpert.name, role: removedExpert.role });
-                message.success(`${removedExpert.name} 已从会议中移除`);
+        
+        async getMeetingMembers() {
+            const meetingId = this.$route.query.meetingId;
+            if (!meetingId) {
+                message.error("无法获取会议ID,请从列表页重新进入。");
+                return;
+            }
+            try {
+                // 调用参会成员查询接口 
+                const response = await api.get(`/api/mp/list/${meetingId}`);
+                if (response.data && response.data.succeed) {
+                    // 接口返回的数据结构如： { "mpId": 1, "meetingId": 1, ... } [cite: 6]
+                    this.expertList = response.data.data.map(expert => ({
+                        ...expert,
+                        name: expert.expertName,
+                        role: expert.meetingRole,
+                        isMuted: expert.speakStatus === '已禁言', // "可发言" 或 "已禁言" [cite: 11]
+                        avatar: '' // 保持前端的 avatar 字段
+                    }));
+                } else {
+                    message.error("获取参会成员列表失败: " + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("获取参会成员列表失败:", error);
+                message.error('网络请求失败，请检查或联系管理员。');
             }
         },
-        addExpert() {
-            if (!this.selectedExpertToAdd) return;
-            const expertToAdd = this.availableExperts.find(e => e.id === this.selectedExpertToAdd);
-            if (expertToAdd) {
-                this.expertList.push({ id: expertToAdd.id, name: expertToAdd.name, role: expertToAdd.role, avatar: '', isMuted: false });
-                const index = this.availableExperts.findIndex(e => e.id === this.selectedExpertToAdd);
-                if (index > -1) { this.availableExperts.splice(index, 1); }
-                this.selectedExpertToAdd = undefined;
-                message.success(`${expertToAdd.name} 已添加到会议`);
+
+        async toggleExpertMute(expert) {
+            const newStatus = expert.isMuted ? '可发言' : '已禁言'; // 根据当前状态决定目标状态 
+            try {
+                // 调用禁言/解禁接口 
+                const response = await api.put('/api/mp/speak', {
+                    mpId: expert.mpId,
+                    expertId: expert.expertId,
+                    speakStatus: newStatus
+                }); 
+                if (response.data && response.data.succeed) { // 成功响应 
+                    expert.isMuted = !expert.isMuted;
+                    expert.speakStatus = newStatus;
+                    message.success(`${expert.name} ${newStatus === '可发言' ? '已解除禁言' : '已禁言'}`);
+                } else {
+                    message.error('操作失败: ' + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("禁言/解禁操作失败:", error);
+                message.error('网络请求失败');
             }
         },
+
+        async setAllMuteStatus(mute) {
+            const newStatus = mute ? '已禁言' : '可发言';
+            const actionName = mute ? '禁言' : '解禁';
+            // 对除管理员外的所有专家执行操作
+            const promises = this.expertList
+                .filter(expert => expert.role !== '会议管理员')
+                .map(expert => {
+                    return api.put('/api/mp/speak', { // 调用禁言/解禁接口 [cite: 8, 9]
+                        mpId: expert.mpId,
+                        expertId: expert.expertId,
+                        speakStatus: newStatus
+                    }).then(res => {
+                        if(res.data && res.data.succeed) {
+                            expert.isMuted = mute;
+                            expert.speakStatus = newStatus;
+                        }
+                    });
+                });
+
+            try {
+                await Promise.all(promises);
+                message.success(`全体成员（除管理员外）已${actionName}`);
+            } catch(error) {
+                console.error(`全体${actionName}失败:`, error);
+                message.error(`全体${actionName}操作时发生网络错误`);
+                this.getMeetingMembers(); // 发生错误时，重新同步状态
+            }
+        },
+
+        muteAllExperts() { this.setAllMuteStatus(true); },
+        unmuteAllExperts() { this.setAllMuteStatus(false); },
+        
+        transferAdmin(targetExpert) {
+            const currentAdmin = this.expertList.find(e => e.role === '会议管理员');
+            if (!currentAdmin) {
+                message.error("错误：未找到当前会议管理员。");
+                return;
+            }
+            
+            Modal.confirm({
+                title: '确认转让管理员',
+                content: `您确定要将管理员权限转让给【${targetExpert.name}】吗？此操作不可逆。`,
+                okText: '确认转让',
+                cancelText: '取消',
+                onOk: async () => {
+                    try {
+                        // 步骤1: 提升目标专家为新的管理员
+                        const promoteResponse = await api.put('/api/mp/role', { 
+                            mpId: targetExpert.mpId,
+                            expertId: targetExpert.expertId,
+                            meetingRole: '会议管理员' // 设置角色为“会议管理员” 
+                        });
+
+                        if (!promoteResponse.data || !promoteResponse.data.succeed) { // 成功响应 
+                            message.error(`提升${targetExpert.name}为管理员失败: ${promoteResponse.data.message || '未知错误'}`);
+                            return;
+                        }
+                        
+                        // 步骤2: 将原管理员降级为普通成员
+                        const demoteResponse = await api.put('/api/mp/role', { // 再次调用转让接口 
+                            mpId: currentAdmin.mpId,
+                            expertId: currentAdmin.expertId,
+                            meetingRole: '参会成员' // 设置角色为“参会成员” 
+                        });
+
+                        if (!demoteResponse.data || !demoteResponse.data.succeed) {
+                            message.error(`降级原管理员失败: ${demoteResponse.data.message || '未知错误'}`);
+                            this.getMeetingMembers(); // 即使失败也要刷新，以防出现两个管理员的状态
+                            return;
+                        }
+
+                        message.success('管理员已成功转让!');
+                        await this.getMeetingMembers(); // 操作成功后刷新列表
+
+                    } catch (error) {
+                        console.error("管理员转让失败:", error);
+                        message.error('网络请求失败，管理员转让操作未完成。');
+                        this.getMeetingMembers(); // 发生异常时也刷新列表
+                    }
+                },
+            });
+        },
+
         showAlgorithmModal() {
             this.algorithmParams.modificationReason = '';
             this.algorithmModalVisible = true;
@@ -610,7 +684,6 @@ export default {
         },
         handleAlgorithmCancel() { this.algorithmModalVisible = false; },
         
-        // 新增方法
         showExplainabilityModal() {
             this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
             this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
