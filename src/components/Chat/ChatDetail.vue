@@ -8,6 +8,7 @@
             block
             @click="startNewChat"
             class="new-chat-btn"
+            :loading="isCreatingChat"
           >
             <a-icon type="plus" /> 新建对话
           </a-button>
@@ -22,12 +23,7 @@
               @click="selectChat(chat.id)"
             >
               <span class="history-title">{{ chat.title }}</span>
-              <a-icon
-                type="delete"
-                class="delete-icon"
-                @click.stop="deleteChat(chat.id)"
-              />
-            </div>
+              </div>
           </div>
 
           <a-divider class="sider-divider" />
@@ -106,7 +102,7 @@
               type="primary"
               class="send-btn"
               @click="sendMessage"
-              :disabled="!userInput.trim() || isLoading || isStreaming"
+              :disabled="!userInput.trim() || isLoading || isStreaming || isCreatingChat"
             >
               <a-icon type="arrow-up" />
             </a-button>
@@ -122,12 +118,14 @@ import { Layout, Icon, Button, Avatar, Input, Tooltip, Spin, message, Divider, C
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { marked } from 'marked'; 
+import api from '@/utils/axios';
 
-// API配置
-const API_BASE_URL = 'http://10.13.1.104:8002';
-const API_ENDPOINT = '/api/chat/multi-chat';
 
-// 新增: 漏洞评估模板常量
+// This is the AI generation service endpoint from the original ChatDetail.vue
+// It is kept because '调用api.docx' does not provide an endpoint for generating AI responses.
+const AI_GENERATION_API_URL = 'http://10.13.1.104:8002/api/chat/multi-chat'; 
+// --- END: API Integration ---
+
 const VULNERABILITY_TEMPLATE = `**漏洞评估请求**
 
 **1. 目标系统/应用:**
@@ -172,8 +170,10 @@ export default {
       allMessages: {}, 
       currentChatId: null,
       isLoading: false,
+      isCreatingChat: false, // Loading state for creating a new chat
       inputFocused: false,
       isStreaming: false, 
+      userId: this.$store.getters['auth/userId'] , 
       knowledgeBases: [
           { id: 'kb1', name: '漏洞数据' },
           { id: 'kb2', name: '评测文档' },
@@ -181,7 +181,6 @@ export default {
           { id: 'kb4', name: '统一规范' },
       ],
       selectedKnowledgeBases: [], 
-      // 新增: 将模板添加到 data 中，方便在方法中访问
       vulnerabilityTemplate: VULNERABILITY_TEMPLATE,
     };
   },
@@ -191,7 +190,7 @@ export default {
     }
   },
   created() {
-    this.loadDataFromStorage();
+    this.fetchChatHistory();
   },
   watch: {
     currentMessages() {
@@ -201,63 +200,168 @@ export default {
     },
   },
   methods: {
-    loadVulnerabilityTemplate() {
-        if (this.userInput.trim() && !confirm('当前输入框有内容，确定要使用模板覆盖吗？')) {
+    // --- START: New methods for API interaction ---
+
+    /**
+     * Fetches the list of past chat sessions from the server.
+     * API: GET api/chat-session/mine 
+     */
+    async fetchChatHistory() {
+        if (!this.userId) {
+            message.error("无法获取用户ID，请重新登录。");
             return;
         }
-        this.userInput = this.vulnerabilityTemplate;
-        this.$nextTick(() => {
-            this.$refs.userInputTextArea.focus();
-        });
-    },
+        try {
+            const response = await api.get('api/chat-session/mine', {
+                params: {
+                    userId: this.userId,  
+                    page: 1, 
+                    size: 10 
+                }
+            });
+            if (response.data && response.data.succeed) {
+                // Mapping API response to local data structure 
+                this.chatHistory = response.data.data.records.map(chat => ({
+                    id: chat.sessionId,
+                    title: chat.sessionTitle || `对话 ${chat.sessionId}`
+                }));
 
-    loadDataFromStorage() {
-        this.chatHistory = JSON.parse(localStorage.getItem('chatHistory')) || [];
-        this.allMessages = JSON.parse(localStorage.getItem('allMessages')) || {};
-        this.selectedKnowledgeBases = JSON.parse(localStorage.getItem('selectedKnowledgeBases')) || [];
-        if (this.chatHistory.length > 0) {
-            this.selectChat(this.chatHistory[0].id);
-        } else {
-            this.startNewChat();
-        }
-    },
-    saveDataToStorage() {
-        localStorage.setItem('chatHistory', JSON.stringify(this.chatHistory));
-        localStorage.setItem('allMessages', JSON.stringify(this.allMessages));
-        localStorage.setItem('selectedKnowledgeBases', JSON.stringify(this.selectedKnowledgeBases));
-    },
-
-    startNewChat() {
-      const newChatId = uuidv4();
-      const newChat = {
-        id: newChatId,
-        title: '新的对话',
-      };
-      this.chatHistory.unshift(newChat);
-      this.$set(this.allMessages, newChatId, []);
-      this.currentChatId = newChatId;
-      this.saveDataToStorage();
-    },
-    selectChat(chatId) {
-      this.currentChatId = chatId;
-    },
-    deleteChat(chatId) {
-        this.chatHistory = this.chatHistory.filter(chat => chat.id !== chatId);
-        this.$delete(this.allMessages, chatId);
-
-        if (this.currentChatId === chatId) {
-            if (this.chatHistory.length > 0) {
-                this.selectChat(this.chatHistory[0].id);
+                if (this.chatHistory.length > 0) {
+                    this.selectChat(this.chatHistory[0].id);
+                } else {
+                    this.startNewChat(); // Create a new chat if history is empty
+                }
             } else {
-                this.startNewChat();
+                 message.error('加载历史会话失败: ' + (response.data.message || '未知错误'));
             }
+        } catch (error) {
+            console.error("加载历史会话失败:", error);
+            message.error("网络错误，无法加载历史会话。");
         }
-        this.saveDataToStorage();
+    },
+    
+    /**
+     * Fetches all messages for a selected chat session.
+     * API: GET api/chat-message/{sid}/turns 
+     */
+    async fetchChatMessages(sessionId) {
+        this.$set(this.allMessages, sessionId, []); // Clear previous messages
+        this.isLoading = true;
+        try {
+            const response = await api.get(`api/chat-message/${sessionId}/turns`, {
+                params: { page: 1, size: 100 } // Example pagination 
+            });
+            if (response.data && response.data.succeed) {
+                const messages = [];
+                // The API returns 'turns', each containing multiple messages 
+                const turns = response.data.data.records.sort((a, b) => a.turn - b.turn); // Sort turns chronologically
+                for (const turn of turns) {
+                    for (const msg of turn.messages) {
+                        messages.push({
+                            id: uuidv4(), // API doesn't provide message ID, using uuid for local key
+                            role: msg.role === 'user' ? 'user' : 'assistant',
+                            content: msg.content,
+                            rawContent: msg.content,
+                        });
+                    }
+                }
+                this.$set(this.allMessages, sessionId, messages);
+            } else {
+                message.error('加载消息失败: ' + (response.data.message || '未知错误'));
+            }
+        } catch (error) {
+            console.error("加载消息失败:", error);
+            message.error("网络错误，无法加载消息。");
+        } finally {
+            this.isLoading = false;
+        }
     },
 
+    /**
+     * Creates a new chat session on the server.
+     * API: POST api/chat-session/{expertId} 
+     */
+    async startNewChat() {
+      this.isCreatingChat = true;
+      try {
+          const response = await api.post(`api/chat-session/${this.userId}`);
+          if (response.data && response.data.succeed) {
+              const newChatData = response.data.data; // 
+              const newChat = {
+                id: newChatData.sessionId,
+                title: newChatData.sessionTitle || '新的对话',
+              };
+              this.chatHistory.unshift(newChat);
+              this.$set(this.allMessages, newChat.id, []);
+              this.currentChatId = newChat.id;
+          } else {
+              message.error("创建新对话失败: " + (response.data.message || '未知错误'));
+          }
+      } catch(error) {
+          console.error("创建新对话失败:", error);
+          message.error("网络错误，无法创建新对话。");
+      } finally {
+          this.isCreatingChat = false;
+      }
+    },
+
+    /**
+     * Saves a turn of conversation (user + assistant messages) to the server.
+     * API: POST api/chat-message 
+     */
+    async saveTurn(userMessage, assistantMessage) {
+        try {
+            const payload = {
+                sessionId: this.currentChatId,
+                messages: [
+                    { msgRole: "user", content: userMessage.content },
+                    { msgRole: "assistant", content: assistantMessage.rawContent } // Save the full, raw content
+                ]
+            }; // 
+            await api.post('api/chat-message', payload);
+            // Optional: handle success or failure response 
+        } catch (error) {
+            console.error("保存会话失败:", error);
+            message.error("未能保存此轮对话，请检查网络连接。");
+        }
+    },
+
+    /**
+     * Updates the title of a chat session on the server.
+     * API: PUT api/chat-session 
+     */
+    async updateChatTitle(sessionId, newTitle) {
+        try {
+            const payload = { sessionId: String(sessionId), sessionTitle: newTitle }; // 
+            const response = await api.put('api/chat-session', payload);
+            if(response.data && response.data.succeed) {
+                // Update title in the local history list as well
+                const chatInHistory = this.chatHistory.find(c => c.id === sessionId);
+                if (chatInHistory) {
+                    chatInHistory.title = newTitle;
+                }
+            }
+        } catch(error) {
+             console.error("更新会话标题失败:", error);
+             // Non-critical error, no need to alert user
+        }
+    },
+
+    // --- END: New methods for API interaction ---
+
+    selectChat(chatId) {
+      if (this.currentChatId === chatId) return;
+      this.currentChatId = chatId;
+      // Fetch messages for the selected chat instead of reading from a preloaded object
+      this.fetchChatMessages(chatId);
+    },
+    
+    // Original methods modified to use API calls
     async sendMessage() {
       const trimmedInput = this.userInput.trim();
       if (!trimmedInput || this.isLoading || this.isStreaming) return;
+
+      const isFirstMessage = this.currentMessages.length === 0;
 
       const userMessage = {
         id: uuidv4(),
@@ -268,14 +372,10 @@ export default {
       this.allMessages[this.currentChatId].push(userMessage);
       this.userInput = '';
       this.isLoading = true;
-
-      const currentChat = this.chatHistory.find(c => c.id === this.currentChatId);
-      if (currentChat && this.allMessages[this.currentChatId].length === 1) {
-          currentChat.title = userMessage.content.substring(0, 20);
-      }
       
       try {
-        const response = await axios.post(API_BASE_URL + API_ENDPOINT, {
+        // Step 1: Get AI response (using the original component's method, as this is not in '调用api.docx')
+        const response = await axios.post(AI_GENERATION_API_URL, {
           session_id: this.currentChatId,
           question: userMessage.content,
           knowledge_base_ids: this.selectedKnowledgeBases, 
@@ -296,29 +396,34 @@ export default {
         };
         this.allMessages[this.currentChatId].push(assistantMessage);
         
-        this.streamResponse(assistantReply, this.currentChatId, assistantMessage.id);
+        // Frontend streaming effect
+        this.streamResponse(assistantReply, this.currentChatId, assistantMessage.id, () => {
+             // Step 2: Once streaming is complete, save the turn to our backend
+             this.saveTurn(userMessage, assistantMessage);
+
+             // Step 3: If it was the first message, update the chat title 
+             if (isFirstMessage) {
+                 const newTitle = userMessage.content.substring(0, 20);
+                 this.updateChatTitle(this.currentChatId, newTitle);
+             }
+        });
 
       } catch (error) {
         console.error("API请求失败:", error);
         message.error("消息发送失败，请检查网络或联系管理员。");
         this.isLoading = false; 
+        // Remove the user message that failed to send
+        this.allMessages[this.currentChatId].pop();
       } 
     },
 
-    streamResponse(text, chatId, messageId) {
+    streamResponse(text, chatId, messageId, onCompleteCallback) {
         this.isStreaming = true;
         let currentIndex = 0;
         const targetChat = this.allMessages[chatId];
-
-        if (!targetChat) {
-            this.isStreaming = false;
-            return;
-        }
+        if (!targetChat) { this.isStreaming = false; return; }
         const messageToUpdate = targetChat.find(m => m.id === messageId);
-        if (!messageToUpdate) {
-            this.isStreaming = false;
-            return;
-        }
+        if (!messageToUpdate) { this.isStreaming = false; return; }
 
         const intervalId = setInterval(() => {
             if (currentIndex < text.length) {
@@ -327,11 +432,23 @@ export default {
             } else {
                 clearInterval(intervalId);
                 this.isStreaming = false;
-                this.saveDataToStorage(); 
+                if(onCompleteCallback) {
+                    onCompleteCallback(); // Execute callback when streaming is done
+                }
             }
         }, 25); 
     },
 
+    // Unmodified helper methods
+    loadVulnerabilityTemplate() {
+        if (this.userInput.trim() && !confirm('当前输入框有内容，确定要使用模板覆盖吗？')) {
+            return;
+        }
+        this.userInput = this.vulnerabilityTemplate;
+        this.$nextTick(() => {
+            this.$refs.userInputTextArea.focus();
+        });
+    },
     handleEnter(e) {
         if (!e.shiftKey) {
             e.preventDefault();
@@ -358,6 +475,7 @@ export default {
 </script>
 
 <style>
+/* --- Styles are unchanged, including .markdown-body and scoped styles --- */
 .markdown-body {
   box-sizing: border-box;
   min-width: 200px;

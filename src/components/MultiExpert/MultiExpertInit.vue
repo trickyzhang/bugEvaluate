@@ -206,13 +206,13 @@ export default {
 
         // 4. 更新会议信息
         async updateMeeting(meetingData) {
-            // 注意：这里的接口路径是 put 'api/group-meeting/update'
             try {
-                const response = await api.put(`api/group-meeting/update`, {
+                const response = await api.put(`api/group-meeting `, {
                     meetingId: meetingData.meetingId,
                     meetingTopic: meetingData.meetingTopic,
                     meetingStart: meetingData.meetingStart,
                 });
+                console.log(response.data);
                 if (response.data.succeed) {
                     message.success('更新会议信息成功');
                     this.fetchMeetings(this.meetingPagination.current, this.meetingPagination.pageSize); // 重新加载数据
