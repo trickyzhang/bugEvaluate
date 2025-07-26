@@ -59,7 +59,7 @@ export default {
   methods: {
     exit() {
       this.$router.push('/login');
-      this.$message.success('Successfully logged out');
+      this.$message.success('成功登出');
     },
   },
 };

@@ -539,12 +539,11 @@ export default {
                 // 调用参会成员查询接口 
                 const response = await api.get(`/api/mp/list/${meetingId}`);
                 if (response.data && response.data.succeed) {
-                    // 接口返回的数据结构如： { "mpId": 1, "meetingId": 1, ... } [cite: 6]
                     this.expertList = response.data.data.map(expert => ({
                         ...expert,
                         name: expert.expertName,
                         role: expert.meetingRole,
-                        isMuted: expert.speakStatus === '已禁言', // "可发言" 或 "已禁言" [cite: 11]
+                        isMuted: expert.speakStatus === '已禁言', // "可发言" 或 "已禁言" 
                         avatar: '' // 保持前端的 avatar 字段
                     }));
                 } else {
@@ -585,7 +584,7 @@ export default {
             const promises = this.expertList
                 .filter(expert => expert.role !== '会议管理员')
                 .map(expert => {
-                    return api.put('/api/mp/speak', { // 调用禁言/解禁接口 [cite: 8, 9]
+                    return api.put('/api/mp/speak', { // 调用禁言/解禁接口  
                         mpId: expert.mpId,
                         expertId: expert.expertId,
                         speakStatus: newStatus

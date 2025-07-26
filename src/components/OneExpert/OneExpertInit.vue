@@ -10,8 +10,8 @@
           pageSize: size,
           total: total,
           showTotal: total => `共 ${total} 条`,
-          showQuickJumper: true,
-          showSizeChanger: true
+          showQuickJumper: false,
+          showSizeChanger: false
         }"
         @change="handleTableChange"
         rowKey="evalId"
@@ -91,6 +91,7 @@ export default {
           const response = await api.get('api/eval/status-count',{
             params:{
               expertId: userId,
+              isGroupEval: 0,
             }
           });
           if(response.data.succeed){
