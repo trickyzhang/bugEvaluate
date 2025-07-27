@@ -134,10 +134,11 @@
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn">保存结果</a-button>
                     <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型辅助生成</a-button>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">语音聊天</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleHost">主持会议</a-button>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">开始评估</a-button>
                 </a-card>
             </a-col>
 
@@ -513,7 +514,7 @@ export default {
         handleChatModalCancel() { this.chatModalVisible = false; },
         async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            //const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
             try {
                 const meetingId = this.$route.query.meetingId;
                 const userId = this.$store.getters['auth/userId'];
@@ -533,7 +534,7 @@ export default {
                 console.log(error);
             }
             this.fetchChatHistory;
-            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
+            //this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
             this.newChatMessage = '';
             this.$nextTick(() => {
                 const chatHistoryEl = this.$refs.chatHistory;

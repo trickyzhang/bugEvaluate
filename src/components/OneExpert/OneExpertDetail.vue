@@ -133,11 +133,12 @@
                 <a-card title="总体评估意见" :bordered="false" class="card-section">
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
-                    <a-button class="opinion-assistant-btn">大模型辅助生成</a-button>
+                    <a-button class="opinion-assistant-btn">大模型生成</a-button>
                 </a-card>
 
                 <div class="footer-buttons">
-                    <a-button type="primary">保存结果</a-button>
+                    <a-button>开始评估</a-button>
+                    <a-button style="margin-left: 8px;" type="primary">保存结果</a-button>
                     <a-button style="margin-left: 8px;" @click="handleClick2">返回列表</a-button>
                 </div>
             </a-col>

@@ -132,9 +132,10 @@
                 <a-card title="总体评估意见" :bordered="false" class="card-section">
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">开始评估</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn">保存结果</a-button>
                     <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型辅助生成</a-button>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">语音聊天</a-button>
                 </a-card>
@@ -297,6 +298,10 @@
 import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message } from 'ant-design-vue';
 import api from '@/utils/axios';
 
+
+import SockJS from 'sockjs-client';
+import { Client } from '@stomp/stompjs';
+
 export default {
     name: 'VulnerabilityAssessment',
     components: {
@@ -319,6 +324,10 @@ export default {
     },
     data() {
         return {
+            // stompClient 用于存储 STOMP 客户端实例
+            stompClient: null,
+            // subscription 用于存储订阅对象
+            subscription: null,
             form: {
                 basic: {
                     cveID: '',
@@ -377,8 +386,90 @@ export default {
     created() {
         this.fetchDetails();
         this.fetchChatHistory();
+        this.initWebSocket();
+    },
+    beforeDestroy() {
+        // 组件销毁前断开 WebSocket 连接
+        this.disconnectWebSocket();
     },
     methods: {
+        initWebSocket() {
+            const meetingId = this.$route.query.meetingId;
+            if (!meetingId) {
+                message.error("无法获取会议ID，无法连接聊天室");
+                return;
+            }
+
+            const authToken = this.$store.getters['auth/authToken'];
+
+            this.stompClient = new Client({
+                brokerURL: 'ws://127.0.0.1:8080/ws', 
+                
+                // 如果后端需要 SockJS 兼容，则提供 webSocketFactory
+                webSocketFactory: () => new SockJS('http://127.0.0.1:8080/ws'),
+
+                // 在连接头中加入身份验证信息
+                connectHeaders: {
+                  Authorization: authToken,
+                },
+
+                // 用于在控制台打印调试信息
+                debug: function (str) {
+                  console.log('STOMP: ' + str);
+                },
+
+                reconnectDelay: 5000,
+            });
+
+            // 定义连接成功后的回调
+            this.stompClient.onConnect = frame => {
+                console.log('Connected to WebSocket: ' + frame);
+                message.success('成功连接到会议聊天室！');
+
+                // 订阅会议公共频道
+                this.subscription = this.stompClient.subscribe('/topic/meeting/' + meetingId, (message) => {
+                    const receivedMsg = JSON.parse(message.body);
+                    // 只处理 CHAT 类型的消息，并更新聊天记录
+                    if (receivedMsg.type === "CHAT" && receivedMsg.payload) {
+                        this.chatHistory.push({
+                            user: receivedMsg.userAccount || '未知用户',
+                            text: receivedMsg.payload
+                        });
+                        // 自动滚动到最新消息
+                        this.$nextTick(() => {
+                            const chatHistoryEl = this.$refs.chatHistory;
+                            if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
+                        });
+                    }
+                });
+            };
+
+            // 定义连接错误的回调
+            this.stompClient.onStompError = frame => {
+                console.error('Broker reported error: ' + frame.headers['message']);
+                console.error('Additional details: ' + frame.body);
+                message.error('聊天发生错误: ' + frame.headers['message']);
+            };
+
+            // 激活客户端，开始连接
+            this.stompClient.activate();
+        },
+
+        // 重写 WebSocket 断开连接方法
+        disconnectWebSocket() {
+            // 先取消订阅
+            if (this.subscription) {
+                this.subscription.unsubscribe();
+                this.subscription = null;
+            }
+            // 然后停用客户端
+            if (this.stompClient) {
+                this.stompClient.deactivate(); // 使用 deactivate
+                this.stompClient = null;
+                console.log('WebSocket disconnected.');
+            }
+        },
+
         async fetchDetails() {
             const id = this.$route.query.id; 
             if (!id) {
@@ -454,40 +545,49 @@ export default {
                 message.error("获取文字聊天历史信息失败");
                 console.log(error);
             }
-
-        }
-        ,
-        handleClick2() { this.$router.push('/multiexpert'); },
+        },
+        // 返回列表前，先断开连接
+        handleClick2() { 
+            this.disconnectWebSocket(); 
+            this.$router.push('/multiexpert'); 
+        },
         handleText() { this.chatModalVisible = true; },
         handleChatModalCancel() { this.chatModalVisible = false; },
+
         async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            // 检查 stompClient 是否存在且处于激活状态
+            if (!this.stompClient || !this.stompClient.active) {
+                message.error("聊天室未连接，无法发送消息！");
+                return;
+            }
+
             try {
                 const meetingId = this.$route.query.meetingId;
                 const userId = this.$store.getters['auth/userId'];
-                const response = await api.post('api/meeting-record',{
-                    meetingId : meetingId,
-                    speakerId : userId,
-                    msgType : '纯文本',
-                    msgContent : this.newChatMessage
+                const userInfo = this.$store.getters['auth/userInfo'];
+
+                const chatMessage = {
+                    meetingId: meetingId,
+                    expertId: userId,
+                    userAccount: userInfo ? userInfo.account : '未知用户',
+                    type: 'CHAT',
+                    payload: this.newChatMessage,
+                    timestamp: Date.now()
+                };
+
+                // publish 方法发送消息
+                this.stompClient.publish({
+                    destination: '/app/chat',
+                    body: JSON.stringify(chatMessage),
                 });
-                if(response.data.succeed){
-                    message.success("发送新消息成功");
-                }else{
-                    message.error("发送消息失败");
-                }
+
+                this.newChatMessage = '';
+
             } catch (error) {
-                message.error("请检查文本内容");
-                console.log(error);
+                message.error("发送消息失败，请检查网络或刷新重试。");
+                console.error("Send message error:", error);
             }
-            this.fetchChatHistory;
-            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
-            this.newChatMessage = '';
-            this.$nextTick(() => {
-                const chatHistoryEl = this.$refs.chatHistory;
-                if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
-            });
         },
         showAlgorithmModal() {
             this.algorithmParams.modificationReason = '';
@@ -512,7 +612,6 @@ export default {
         },
         handleAlgorithmCancel() { this.algorithmModalVisible = false; },
         
-        // 新增方法
         showExplainabilityModal() {
             this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
             this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
