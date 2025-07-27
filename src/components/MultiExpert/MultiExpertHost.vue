@@ -429,11 +429,8 @@ export default {
             hostModalVisible: false,
             chatModalVisible: false,
             newChatMessage: '',
-            chatHistory: [
-                { user: '主持人', text: '大家好，会议现在开始。我们首先来讨论一下这个漏洞的评估结果。' },
-                { user: '张三', text: '好的，我先来分享一下我的看法...' },
-            ],
-            expertList: [], // 修改: 初始化为空数组，将通过API获取
+            chatHistory: [],
+            expertList: [], 
             // 算法弹窗
             algorithmModalVisible: false,
             modalLoading: false,
@@ -457,6 +454,7 @@ export default {
     },
     created() {
         this.fetchDetails();
+        this.fetchChatHistory();
     },
     methods: {
         async fetchDetails() {
@@ -513,9 +511,29 @@ export default {
         handleClick2() { this.$router.push('/multiexpert'); },
         handleText() { this.chatModalVisible = true; },
         handleChatModalCancel() { this.chatModalVisible = false; },
-        handleSendMessage() {
+        async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            this.chatHistory.push({ user: '主持人', text: this.newChatMessage });
+            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            try {
+                const meetingId = this.$route.query.meetingId;
+                const userId = this.$store.getters['auth/userId'];
+                const response = await api.post('api/meeting-record',{
+                    meetingId : meetingId,
+                    speakerId : userId,
+                    msgType : '纯文本',
+                    msgContent : this.newChatMessage
+                });
+                if(response.data.succeed){
+                    message.success("发送新消息成功");
+                }else{
+                    message.error("发送消息失败");
+                }
+            } catch (error) {
+                message.error("请检查文本内容");
+                console.log(error);
+            }
+            this.fetchChatHistory;
+            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
             this.newChatMessage = '';
             this.$nextTick(() => {
                 const chatHistoryEl = this.$refs.chatHistory;
@@ -528,7 +546,32 @@ export default {
         },
         handleHostModalOk() { this.hostModalVisible = false; message.success('会议已开始'); },
         handleHostModalCancel() { this.hostModalVisible = false; },
-        
+
+        async fetchChatHistory(){
+            const meetingId = this.$route.query.meetingId;
+            if(!meetingId){
+                message.error("无法获得会议id");
+                return;
+            }
+            try {
+                const response =await api.get('api/meeting-record/list',{
+                    params:{ meetingId }
+                });
+                if(response.data.succeed){
+                    const data = response.data.data.records;
+                    this.chatHistory = data.map(msg =>({
+                        ...msg,
+                        user: msg.userAccount,
+                        text: msg.msgContent,
+                    }));
+                }else{
+                    message.error("获取消息历史失败",response.data);
+                }
+            } catch (error) {
+                message.error("获取文字聊天历史信息失败");
+                console.log(error);
+            }
+        },
         async getMeetingMembers() {
             const meetingId = this.$route.query.meetingId;
             if (!meetingId) {
@@ -556,15 +599,14 @@ export default {
         },
 
         async toggleExpertMute(expert) {
-            const newStatus = expert.isMuted ? '可发言' : '已禁言'; // 根据当前状态决定目标状态 
-            try {
-                // 调用禁言/解禁接口 
+            const newStatus = expert.isMuted ? '可发言' : '已禁言'; 
+            try { 
                 const response = await api.put('/api/mp/speak', {
                     mpId: expert.mpId,
                     expertId: expert.expertId,
                     speakStatus: newStatus
                 }); 
-                if (response.data && response.data.succeed) { // 成功响应 
+                if (response.data && response.data.succeed) { 
                     expert.isMuted = !expert.isMuted;
                     expert.speakStatus = newStatus;
                     message.success(`${expert.name} ${newStatus === '可发言' ? '已解除禁言' : '已禁言'}`);
@@ -584,7 +626,7 @@ export default {
             const promises = this.expertList
                 .filter(expert => expert.role !== '会议管理员')
                 .map(expert => {
-                    return api.put('/api/mp/speak', { // 调用禁言/解禁接口  
+                    return api.put('/api/mp/speak', {  
                         mpId: expert.mpId,
                         expertId: expert.expertId,
                         speakStatus: newStatus
@@ -630,13 +672,13 @@ export default {
                             meetingRole: '会议管理员' // 设置角色为“会议管理员” 
                         });
 
-                        if (!promoteResponse.data || !promoteResponse.data.succeed) { // 成功响应 
+                        if (!promoteResponse.data || !promoteResponse.data.succeed) { 
                             message.error(`提升${targetExpert.name}为管理员失败: ${promoteResponse.data.message || '未知错误'}`);
                             return;
                         }
                         
                         // 步骤2: 将原管理员降级为普通成员
-                        const demoteResponse = await api.put('/api/mp/role', { // 再次调用转让接口 
+                        const demoteResponse = await api.put('/api/mp/role', { 
                             mpId: currentAdmin.mpId,
                             expertId: currentAdmin.expertId,
                             meetingRole: '参会成员' // 设置角色为“参会成员” 

@@ -52,14 +52,12 @@
       'a-form-item': Form.Item,
       'a-icon': Icon,
       'a-input': Input,
-      'a-input-password': Input.Password, // 注意 Password 的引入方式
+      'a-input-password': Input.Password, 
       'a-button': Button,
     },
     data() {
       return {
-        // 登录按钮的加载状态
         loading: false,
-        // 表单数据
         form: this.$form.createForm(this),
         // 表单验证规则
         rules: {

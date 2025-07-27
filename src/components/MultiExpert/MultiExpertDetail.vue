@@ -352,11 +352,7 @@ export default {
             },
             chatModalVisible: false,
             newChatMessage: '',
-            chatHistory: [
-                { user: '张三', text: '关于这个漏洞，我初步看了一下，风险等级可能需要重新评估。' },
-                { user: '李四', text: '同意，特别是它的利用复杂性，自动化工具给出的评分可能偏低。' },
-                { user: '王五', text: '我补充一点，威胁情报显示近期有相关的攻击活动，需要警惕。' }
-            ],
+            chatHistory: [],
             // 算法弹窗
             algorithmModalVisible: false,
             modalLoading: false,
@@ -365,7 +361,7 @@ export default {
                 paramB: '默认值2',
                 paramC: '默认值3',
                 paramD: '默认值4',
-                modificationReason: '', // 新增
+                modificationReason: '', 
             },
             // 可解释性弹窗
             explainabilityModalVisible: false,
@@ -380,6 +376,7 @@ export default {
     },
     created() {
         this.fetchDetails();
+        this.fetchChatHistory();
     },
     methods: {
         async fetchDetails() {
@@ -433,12 +430,59 @@ export default {
                 message.error('网络请求失败，请检查网络或联系管理员。');
             }
         },
+        async fetchChatHistory(){
+            const meetingId = this.$route.query.meetingId;
+            if(!meetingId){
+                message.error("无法获得会议id");
+                return;
+            }
+            try {
+                const response =await api.get('api/meeting-record/list',{
+                    params:{ meetingId }
+                });
+                if(response.data.succeed){
+                    const data = response.data.data.records;
+                    this.chatHistory = data.map(msg =>({
+                        ...msg,
+                        user: msg.userAccount,
+                        text: msg.msgContent,
+                    }));
+                }else{
+                    message.error("获取消息历史失败",response.data);
+                }
+            } catch (error) {
+                message.error("获取文字聊天历史信息失败");
+                console.log(error);
+            }
+
+        }
+        ,
         handleClick2() { this.$router.push('/multiexpert'); },
         handleText() { this.chatModalVisible = true; },
         handleChatModalCancel() { this.chatModalVisible = false; },
-        handleSendMessage() {
+        async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            this.chatHistory.push({ user: '我', text: this.newChatMessage });
+            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            try {
+                const meetingId = this.$route.query.meetingId;
+                const userId = this.$store.getters['auth/userId'];
+                const response = await api.post('api/meeting-record',{
+                    meetingId : meetingId,
+                    speakerId : userId,
+                    msgType : '纯文本',
+                    msgContent : this.newChatMessage
+                });
+                if(response.data.succeed){
+                    message.success("发送新消息成功");
+                }else{
+                    message.error("发送消息失败");
+                }
+            } catch (error) {
+                message.error("请检查文本内容");
+                console.log(error);
+            }
+            this.fetchChatHistory;
+            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
             this.newChatMessage = '';
             this.$nextTick(() => {
                 const chatHistoryEl = this.$refs.chatHistory;
