@@ -514,7 +514,7 @@ export default {
         handleChatModalCancel() { this.chatModalVisible = false; },
         async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            //const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
             try {
                 const meetingId = this.$route.query.meetingId;
                 const userId = this.$store.getters['auth/userId'];
@@ -534,7 +534,7 @@ export default {
                 console.log(error);
             }
             this.fetchChatHistory;
-            //this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
+            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
             this.newChatMessage = '';
             this.$nextTick(() => {
                 const chatHistoryEl = this.$refs.chatHistory;
@@ -587,8 +587,8 @@ export default {
                         ...expert,
                         name: expert.expertName,
                         role: expert.meetingRole,
-                        isMuted: expert.speakStatus === '已禁言', // "可发言" 或 "已禁言" 
-                        avatar: '' // 保持前端的 avatar 字段
+                        isMuted: expert.speakStatus === '已禁言', 
+                        avatar: '' 
                     }));
                 } else {
                     message.error("获取参会成员列表失败: " + (response.data.message || '未知错误'));
@@ -666,7 +666,7 @@ export default {
                 cancelText: '取消',
                 onOk: async () => {
                     try {
-                        // 步骤1: 提升目标专家为新的管理员
+                        // 提升目标专家为新的管理员,后端会自动把原原专家降为参会专家
                         const promoteResponse = await api.put('/api/mp/role', { 
                             mpId: targetExpert.mpId,
                             expertId: targetExpert.expertId,
@@ -679,21 +679,23 @@ export default {
                         }
                         
                         // 步骤2: 将原管理员降级为普通成员
-                        const demoteResponse = await api.put('/api/mp/role', { 
-                            mpId: currentAdmin.mpId,
-                            expertId: currentAdmin.expertId,
-                            meetingRole: '参会成员' // 设置角色为“参会成员” 
-                        });
+                        //const demoteResponse = await api.put('/api/mp/role', { 
+                        //    mpId: currentAdmin.mpId,
+                        //    expertId: currentAdmin.expertId,
+                         //   meetingRole: '参会成员' // 设置角色为“参会成员” 
+                        //});
 
-                        if (!demoteResponse.data || !demoteResponse.data.succeed) {
-                            message.error(`降级原管理员失败: ${demoteResponse.data.message || '未知错误'}`);
-                            this.getMeetingMembers(); // 即使失败也要刷新，以防出现两个管理员的状态
-                            return;
-                        }
-
+                        ///if (!demoteResponse.data || !demoteResponse.data.succeed) {
+                        //    console.log(demoteResponse.data);
+                         //   message.error(`降级原管理员失败: ${demoteResponse.data.message || '未知错误'}`);
+                         //   this.getMeetingMembers();
+                          //  this.$route // 即使失败也要刷新，以防出现两个管理员的状态
+                          //  return;
+                        //}
                         message.success('管理员已成功转让!');
                         await this.getMeetingMembers(); // 操作成功后刷新列表
-
+                        this.hostModalVisible = false;
+                        this.$router.push({ path: '/multiexpert/detail', query: { id: this.$route.query.id, meetingId:this.$route.query.meetingId  } });
                     } catch (error) {
                         console.error("管理员转让失败:", error);
                         message.error('网络请求失败，管理员转让操作未完成。');

@@ -208,7 +208,7 @@
             <div class="chat-modal-content">
                 <div class="chat-history" ref="chatHistory">
                     <div v-for="(msg, index) in chatHistory" :key="index" class="chat-message">
-                        <strong>{{ msg.user }}:</strong> {{ msg.text }}
+                        <strong>{{ msg.user }} ({{ formatTimestamp(msg.timestamp) }}):</strong> {{ msg.text }}
                     </div>
                 </div>
                 <div class="chat-input-area">
@@ -393,49 +393,48 @@ export default {
         this.disconnectWebSocket();
     },
     methods: {
+        formatTimestamp(timestamp) {
+            if (!timestamp) return '';
+            return new Date(timestamp).toLocaleString();
+        },
+
         initWebSocket() {
             const meetingId = this.$route.query.meetingId;
             if (!meetingId) {
-                message.error("无法获取会议ID，无法连接聊天室");
+                message.error("无法获取会议ID,无法连接聊天室");
                 return;
             }
 
             const authToken = this.$store.getters['auth/authToken'];
+            console.log(authToken);
 
             this.stompClient = new Client({
                 brokerURL: 'ws://127.0.0.1:8080/ws', 
-                
-                // 如果后端需要 SockJS 兼容，则提供 webSocketFactory
                 webSocketFactory: () => new SockJS('http://127.0.0.1:8080/ws'),
-
-                // 在连接头中加入身份验证信息
                 connectHeaders: {
                   Authorization: authToken,
                 },
-
-                // 用于在控制台打印调试信息
-                debug: function (str) {
-                  console.log('STOMP: ' + str);
-                },
-
+                debug: (str) => { console.log('STOMP: ' + str); },
                 reconnectDelay: 5000,
             });
 
-            // 定义连接成功后的回调
             this.stompClient.onConnect = frame => {
                 console.log('Connected to WebSocket: ' + frame);
                 message.success('成功连接到会议聊天室！');
 
-                // 订阅会议公共频道
+                // 订阅回调以处理带时间戳的消息
                 this.subscription = this.stompClient.subscribe('/topic/meeting/' + meetingId, (message) => {
                     const receivedMsg = JSON.parse(message.body);
-                    // 只处理 CHAT 类型的消息，并更新聊天记录
+                    
                     if (receivedMsg.type === "CHAT" && receivedMsg.payload) {
+                        // 将包含完整信息的新对象推入 chatHistory
                         this.chatHistory.push({
                             user: receivedMsg.userAccount || '未知用户',
-                            text: receivedMsg.payload
+                            text: receivedMsg.payload,
+                            timestamp: receivedMsg.timestamp 
                         });
-                        // 自动滚动到最新消息
+
+                        // 自动滚动到底部
                         this.$nextTick(() => {
                             const chatHistoryEl = this.$refs.chatHistory;
                             if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
@@ -444,14 +443,11 @@ export default {
                 });
             };
 
-            // 定义连接错误的回调
             this.stompClient.onStompError = frame => {
                 console.error('Broker reported error: ' + frame.headers['message']);
-                console.error('Additional details: ' + frame.body);
                 message.error('聊天发生错误: ' + frame.headers['message']);
             };
 
-            // 激活客户端，开始连接
             this.stompClient.activate();
         },
 
@@ -528,21 +524,22 @@ export default {
                 return;
             }
             try {
-                const response =await api.get('api/meeting-record/list',{
+                const response = await api.get('api/meeting-record/list',{
                     params:{ meetingId }
                 });
                 if(response.data.succeed){
                     const data = response.data.data.records;
                     this.chatHistory = data.map(msg =>({
-                        ...msg,
                         user: msg.userAccount,
                         text: msg.msgContent,
+                        timestamp: msg.recordCreated
                     }));
-                }else{
+                } else {
                     message.error("获取消息历史失败",response.data);
                 }
             } catch (error) {
                 message.error("获取文字聊天历史信息失败");
+                message.error(error);
                 console.log(error);
             }
         },
