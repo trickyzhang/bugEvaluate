@@ -34,14 +34,14 @@
           <a-form-model-item label="Max Tokens">
             <a-input-number v-model="form.max_tokens" :min="1" :max="4096" :step="1" style="width: 100%" />
             <div class="form-item-extra">
-              单次请求中，模型生成的最大token数量。1个汉字约等于2个token。
+              单次请求中,模型生成的最大token数量。1个汉字约等于2个token。
             </div>
           </a-form-model-item>
   
           <a-form-model-item label="Search Top K">
             <a-input-number v-model="form.search_top_k" :min="1" :max="10" :step="1" style="width: 100%" />
              <div class="form-item-extra">
-              在进行知识库或向量搜索时，返回最相关的K个结果。
+              在进行知识库或向量搜索时,返回最相关的K个结果。
             </div>
           </a-form-model-item>
   
@@ -60,6 +60,7 @@
   
   <script>
   import { Card, FormModel, Slider, Row, Col, InputNumber, Button, message } from 'ant-design-vue';
+  import api from '@/utils/axios';
   
   export default {
     name: 'LLM_Params_Admin',
@@ -78,54 +79,71 @@
         labelCol: { span: 4 },
         wrapperCol: { span: 14 },
         form: {
-          temperature: 0.7,
-          top_p: 0.90,
-          max_tokens: 2048,
-          search_top_k: 3
+          temperature: 0,
+          top_p: 0,
+          max_tokens: 0,
+          search_top_k: 0
         },
+        configId: 0,
       };
+    },
+    created() {
+        this.fetchParameters();
     },
     methods: {
 
       handleSave() {
         this.$refs.form.validate(valid => {
           if (valid) {
-            console.log('静态保存成功，当前表单数据:', this.form);
-            message.success('配置已在本地更新！');
-  
-            // 动态修改：调用方法与后端API对接
-            this.postParametersToAPI(this.form);
+            this.updateParametersToAPI(this.form);
           } else {
             console.log('表单验证失败');
             return false;
           }
         });
       },
-  
-      /**
-       * 对接后端的POST方法
-       * @param {object} paramsData - 需要发送到后端的数据
-       */
-      async postParametersToAPI(paramsData) {
-        console.log('向后端API发送POST请求，地址: /api/llm/config');
-        console.log('发送的数据:', paramsData);
-        
+
+      async fetchParameters() {
+        const expertId = this.$store.getters['auth/userId'];
         try {
-          // 真实axios 请求
-          // const response = await axios.post('/api/llm/config', paramsData);
-          // if(response.data.success) {
-          //   message.success('配置已成功保存到服务器！');
-          // }
-          
-          // --- Mocking API call ---
-          await new Promise(resolve => setTimeout(resolve, 500)); 
-          // ------------------------
-  
-          message.success('配置已成功保存到服务器！');
-        } catch (error) {
-          console.error('API请求失败:', error);
-          message.error('无法连接到服务器，请稍后重试。');
+            const response = await api.get('api/llm-param/' + expertId);
+            if (response.data.succeed) {
+                this.form.temperature = parseFloat(response.data.data.temperature);
+                this.form.top_p = parseFloat(response.data.data.topP); 
+                this.form.max_tokens = parseInt(response.data.data.maxTokens, 10);
+                this.form.search_top_k = parseInt(response.data.data.searchTopK, 10);
+                this.configId = response.data.data.configId;
+            } else {
+                message.error("获取大模型参数失败");
+                console.log(response.data);
+            }
+        }  catch (error) {
+            message.error("获取大模型参数数据失败");
+            console.log(error); 
         }
+      },
+  
+      async updateParametersToAPI(paramsData) {
+        const expertId = this.$store.getters['auth/userId'];
+        try {
+            const response = await api.put('/api/llm-param', {
+                  configId: this.configId,
+                  expertId: expertId,
+                  temperature: paramsData.temperature,
+                  topP: paramsData.top_p, 
+                  maxTokens: paramsData.max_tokens, 
+                  searchTopK: paramsData.search_top_k 
+            });
+        
+            if (response.data.succeed) { 
+                message.success('配置已成功保存到服务器！');
+            } else {
+                message.error('保存失败：' + response.data.data); 
+            }
+        } catch (error) {
+            console.error('API请求失败:', error);
+            message.error('无法连接到服务器，请稍后重试。');
+          }
       }
     }
   }
