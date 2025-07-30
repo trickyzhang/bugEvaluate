@@ -690,7 +690,7 @@ export default {
                 }
 
                 this.livekitRoom = new Room();
-                const livekitUrl = 'ws://127.0.0.1:7880';
+                const livekitUrl = 'ws://10.13.1.104:7880';
 
                 message.info('正在连接语音服务...');
                 await this.livekitRoom.connect(livekitUrl, token);

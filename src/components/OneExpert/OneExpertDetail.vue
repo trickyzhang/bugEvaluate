@@ -137,8 +137,8 @@
                 </a-card>
 
                 <div class="footer-buttons">
-                    <a-button>开始评估</a-button>
-                    <a-button style="margin-left: 8px;" type="primary">保存结果</a-button>
+                    <a-button style="margin-left: 8px;" @click="startEval">开始评估</a-button>
+                    <a-button style="margin-left: 8px;" type="primary" @click="handleSaveAll">保存结果</a-button>
                     <a-button style="margin-left: 8px;" @click="handleClick2">返回列表</a-button>
                 </div>
             </a-col>
@@ -494,6 +494,35 @@ export default {
         },
         handleExplainabilityCancel() {
             this.explainabilityModalVisible = false;
+        },
+        async startEval(){
+            try {
+                const response = await api.put("api/eval/start/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("开始评估");
+                }else{
+                    message.error("开始评估失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估开始失败");
+                console.log(error);
+            }
+        },
+        async handleSaveAll(){
+            //结束评估
+            try {
+                const response = await api.put("api/eval/confirm/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("评估完成");
+                }else{
+                    message.error("结束评估失败")
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估结束失败");
+                console.log(error);
+            }
         }
     },
 }

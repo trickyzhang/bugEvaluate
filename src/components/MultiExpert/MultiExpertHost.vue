@@ -865,7 +865,6 @@ export default {
             }
         },
 
-        // 【新增】连接到语音房间
         async connectToVoice() {
             const meetingId = this.$route.query.meetingId;
             const userInfo = this.$store.getters['auth/userInfo'];
@@ -890,7 +889,7 @@ export default {
 
                 // 2. 创建并连接到 Room
                 this.livekitRoom = new Room();
-                const livekitUrl = 'ws://127.0.0.1:7880'; 
+                const livekitUrl = 'ws://10.13.1.104:7880'; 
 
                 message.info('正在连接语音服务...');
                 await this.livekitRoom.connect(livekitUrl, token);

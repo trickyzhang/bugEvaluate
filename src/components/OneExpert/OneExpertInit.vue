@@ -72,14 +72,9 @@ export default {
     this.fetchBugList();
   },
   methods: {
-      /**
-       * @description 跳转到详情页
-       * @param {object} record - 当前行的数据对象
-       */
       viewDetail(record) {
         if (record && record.evalId) {
-          // 使用 path 和 query 参数进行跳转
-          // 这会导航到 /oneexpert/detail?id=xxx
+          // 导航到 /oneexpert/detail?id=xxx
           this.$router.push({ path: '/oneexpert/detail', query: { id: record.evalId } });
         } else {
           message.error("无法获取当前漏洞的ID");
