@@ -137,7 +137,24 @@
                     <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">语音聊天</a-button>
+                    <a-button 
+                        style="margin-left: 8px;" 
+                        class="opinion-assistant-btn"
+                        :type="isVoiceConnected ? 'danger' : 'default'"
+                        @click="toggleVoiceConnection"
+                    >                   
+                    <a-icon :type="isVoiceConnected ? 'phone' : 'sound'" />
+                        {{ isVoiceConnected ? '断开语音' : '连接语音' }}
+                    </a-button>
+                    <a-button
+                        v-if="isVoiceConnected"
+                        style="margin-left: 8px;"
+                        class="opinion-assistant-btn"
+                        @click="toggleSelfMute"
+                    >               
+                    <a-icon :type="isMutedBySelf ? 'mic' : 'stop'" />
+                        {{ isMutedBySelf ? '取消禁麦' : '麦克风静音' }}
+                    </a-button>
                 </a-card>
             </a-col>
 
@@ -295,12 +312,13 @@
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Icon} from 'ant-design-vue';
 import api from '@/utils/axios';
 
 
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
+import { Room, RoomEvent } from 'livekit-client';
 
 export default {
     name: 'VulnerabilityAssessment',
@@ -321,6 +339,7 @@ export default {
         'a-range-picker': DatePicker.RangePicker,
         'a-textarea': Input.TextArea,
         'a-modal': Modal,
+        'a-icon': Icon,
     },
     data() {
         return {
@@ -381,6 +400,9 @@ export default {
                 risk: undefined,
                 modificationReason: '',
             },
+            livekitRoom: null,
+            isVoiceConnected: false,
+            isMutedBySelf: false,
         }
     },
     created() {
@@ -391,6 +413,9 @@ export default {
     beforeDestroy() {
         // 组件销毁前断开 WebSocket 连接
         this.disconnectWebSocket();
+        if (this.livekitRoom) {
+            this.livekitRoom.disconnect();
+        }
     },
     methods: {
         formatTimestamp(timestamp) {
@@ -406,7 +431,6 @@ export default {
             }
 
             const authToken = this.$store.getters['auth/authToken'];
-            console.log(authToken);
 
             this.stompClient = new Client({
                 brokerURL: 'ws://127.0.0.1:8080/ws', 
@@ -414,7 +438,7 @@ export default {
                 connectHeaders: {
                   Authorization: authToken,
                 },
-                debug: (str) => { console.log('STOMP: ' + str); },
+                //debug: (str) => { console.log('STOMP: ' + str); },
                 reconnectDelay: 5000,
             });
 
@@ -528,8 +552,8 @@ export default {
                     params:{ meetingId }
                 });
                 if(response.data.succeed){
-                    const data = response.data.data.records;
-                    this.chatHistory = data.map(msg =>({
+                    const data = response.data.data;
+                    this.chatHistory = data.slice().reverse().map(msg =>({
                         user: msg.userAccount,
                         text: msg.msgContent,
                         timestamp: msg.recordCreated
@@ -539,7 +563,6 @@ export default {
                 }
             } catch (error) {
                 message.error("获取文字聊天历史信息失败");
-                message.error(error);
                 console.log(error);
             }
         },
@@ -636,7 +659,105 @@ export default {
                 this.explainabilityModalVisible = false;
             }, 1000);
         },
-        handleExplainabilityCancel() { this.explainabilityModalVisible = false; }
+        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
+        toggleVoiceConnection() {
+            if (this.isVoiceConnected) {
+                this.disconnectFromVoice();
+            } else {
+                this.connectToVoice();
+            }
+        },
+
+        async connectToVoice() {
+            const meetingId = this.$route.query.meetingId;
+            const userInfo = this.$store.getters['auth/userInfo'];
+
+            if (!meetingId || !userInfo) {
+                message.error("无法获取会议或用户信息，无法加入语音。");
+                return;
+            }
+
+            try {
+                const response = await api.post('/api/livekit/token', {
+                    roomName: `meeting-${meetingId}`,
+                    participantIdentity: userInfo.account,
+                });
+
+                const { token } = response.data;
+                if (!token) {
+                    message.error("获取语音授权失败！");
+                    return;
+                }
+
+                this.livekitRoom = new Room();
+                const livekitUrl = 'ws://127.0.0.1:7880';
+
+                message.info('正在连接语音服务...');
+                await this.livekitRoom.connect(livekitUrl, token);
+
+                this.livekitRoom
+            .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                console.log('✅ 成功订阅到新的轨道', {
+                    trackSid: track.sid,
+                    kind: track.kind,
+                    participant: participant.identity
+                });
+                if (track.kind === 'audio') {
+                    const element = track.attach(); 
+                    // 将这个元素直接添加到页面的 body 中，使其可以播放声音
+                    document.body.appendChild(element); 
+                }
+            })
+            .on(RoomEvent.TrackSubscriptionFailed, (trackSid, participant) => {
+                console.error('❌ 订阅轨道失败', {
+                    trackSid: trackSid,
+                    participant: participant.identity
+                });
+            })
+            .on(RoomEvent.ConnectionStateChanged, (state) => {
+                console.log('🔗 连接状态改变:', state);
+            });
+
+                await this.livekitRoom.localParticipant.setMicrophoneEnabled(true);
+
+                this.isVoiceConnected = true;
+                this.isMutedBySelf = false;
+                message.success('语音已连接！');
+
+                this.livekitRoom.on(RoomEvent.ParticipantConnected, (participant) => {
+                    message.info(`${participant.identity} 加入了语音。`);
+                });
+                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
+                    message.warn(`${participant.identity} 离开了语音。`);
+                });
+
+            } catch (error) {
+                console.error("连接语音失败:", error);
+                message.error("连接语音失败，请检查网络或联系管理员。");
+                if (this.livekitRoom) {
+                    this.livekitRoom.disconnect();
+                    this.livekitRoom = null;
+                }
+            }
+        },
+
+        async disconnectFromVoice() {
+            if (this.livekitRoom) {
+                this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+                await this.livekitRoom.disconnect();
+                this.livekitRoom = null;
+                this.isVoiceConnected = false;
+                message.warn('语音已断开。');
+            }
+        },
+
+        toggleSelfMute() {
+            if (!this.livekitRoom) return;
+            const newMuteState = !this.isMutedBySelf;
+            this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
+            this.isMutedBySelf = newMuteState;
+            message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
+        }
     },
 }
 </script>

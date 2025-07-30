@@ -136,7 +136,24 @@
                     <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">语音聊天</a-button>
+                    <a-button 
+                        style="margin-left: 8px;" 
+                        class="opinion-assistant-btn"
+                        :type="isVoiceConnected ? 'danger' : 'default'"
+                        @click="toggleVoiceConnection"
+                    >                   
+                        <a-icon :type="isVoiceConnected ? 'phone' : 'sound'" />
+                            {{ isVoiceConnected ? '断开语音' : '连接语音' }}
+                    </a-button>
+                    <a-button
+                        v-if="isVoiceConnected"
+                        style="margin-left: 8px;"
+                        class="opinion-assistant-btn"
+                        @click="toggleSelfMute"
+                    >               
+                    <a-icon :type="isMutedBySelf ? 'mic' : 'stop'" />
+                        {{ isMutedBySelf ? '取消禁麦' : '麦克风静音' }}
+                    </a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleHost">主持会议</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">开始评估</a-button>
                 </a-card>
@@ -285,7 +302,7 @@
             <div class="chat-modal-content">
                 <div class="chat-history" ref="chatHistory">
                     <div v-for="(msg, index) in chatHistory" :key="index" class="chat-message">
-                        <strong>{{ msg.user }}:</strong> {{ msg.text }}
+                        <strong>{{ msg.user }} ({{ formatTimestamp(msg.timestamp) }}):</strong> {{ msg.text }}
                     </div>
                 </div>
                 <div class="chat-input-area">
@@ -375,6 +392,12 @@
 import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Avatar, Tag, Icon } from 'ant-design-vue';
 import api from '@/utils/axios';
 
+// 【新增】导入 WebSocket 相关库
+import SockJS from 'sockjs-client';
+import { Client } from '@stomp/stompjs';
+
+import { Room, RoomEvent } from 'livekit-client';
+
 export default {
     name: 'VulnerabilityAssessment',
     components: {
@@ -400,6 +423,9 @@ export default {
     },
     data() {
         return {
+            // WebSocket 状态管理
+            stompClient: null,
+            subscription: null,
             form: {
                 basic: {
                     cveID: '',
@@ -440,7 +466,7 @@ export default {
                 paramB: '默认值2',
                 paramC: '默认值3',
                 paramD: '默认值4',
-                modificationReason: '', // 新增
+                modificationReason: '', 
             },
             // 可解释性弹窗
             explainabilityModalVisible: false,
@@ -451,13 +477,90 @@ export default {
                 risk: undefined,
                 modificationReason: '',
             },
+            livekitRoom: null, // LiveKit Room 实例
+            isVoiceConnected: false, // 是否已连接到语音
+            isMutedBySelf: false, // 是否自己静音了麦克风
         }
     },
     created() {
         this.fetchDetails();
         this.fetchChatHistory();
+        this.initWebSocket();
+    },
+    beforeDestroy() {
+        this.disconnectWebSocket();
+        if (this.livekitRoom) {
+            this.livekitRoom.disconnect();
+        }
     },
     methods: {
+        formatTimestamp(timestamp) {
+            if (!timestamp) return '';
+            return new Date(timestamp).toLocaleString();
+        },
+
+        // 初始化 WebSocket 
+        initWebSocket() {
+            const meetingId = this.$route.query.meetingId;
+            if (!meetingId) {
+                message.error("无法获取会议ID,无法连接聊天室");
+                return;
+            }
+
+            const authToken = this.$store.getters['auth/authToken'];
+
+            this.stompClient = new Client({
+                brokerURL: 'ws://127.0.0.1:8080/ws', 
+                webSocketFactory: () => new SockJS('http://127.0.0.1:8080/ws'),
+                connectHeaders: {
+                  Authorization: authToken,
+                },
+                reconnectDelay: 5000,
+            });
+
+            this.stompClient.onConnect = frame => {
+                console.log('Connected to WebSocket: ' + frame);
+                message.success('成功连接到会议聊天室！');
+
+                this.subscription = this.stompClient.subscribe('/topic/meeting/' + meetingId, (message) => {
+                    const receivedMsg = JSON.parse(message.body);
+                    
+                    if (receivedMsg.type === "CHAT" && receivedMsg.payload) {
+                        this.chatHistory.push({
+                            user: receivedMsg.userAccount || '未知用户',
+                            text: receivedMsg.payload,
+                            timestamp: receivedMsg.timestamp 
+                        });
+
+                        this.$nextTick(() => {
+                            const chatHistoryEl = this.$refs.chatHistory;
+                            if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
+                        });
+                    }
+                });
+            };
+
+            this.stompClient.onStompError = frame => {
+                console.error('Broker reported error: ' + frame.headers['message']);
+                message.error('聊天发生错误: ' + frame.headers['message']);
+            };
+
+            this.stompClient.activate();
+        },
+
+        // 断开 WebSocket 连接
+        disconnectWebSocket() {
+            if (this.subscription) {
+                this.subscription.unsubscribe();
+                this.subscription = null;
+            }
+            if (this.stompClient) {
+                this.stompClient.deactivate();
+                this.stompClient = null;
+                console.log('WebSocket disconnected.');
+            }
+        },
+
         async fetchDetails() {
             const id = this.$route.query.id; 
             if (!id) {
@@ -509,38 +612,51 @@ export default {
                 message.error('网络请求失败，请检查网络或联系管理员。');
             }
         },
-        handleClick2() { this.$router.push('/multiexpert'); },
+
+        // 返回列表前，先断开连接
+        handleClick2() { 
+            this.disconnectWebSocket(); 
+            this.$router.push('/multiexpert'); 
+        },
+
         handleText() { this.chatModalVisible = true; },
         handleChatModalCancel() { this.chatModalVisible = false; },
+
+        // 使用 WebSocket 发送消息
         async handleSendMessage() {
             if (!this.newChatMessage.trim()) return;
-            const username = this.$store.getters['auth/userInfo'].account;//前端本地广播
+            if (!this.stompClient || !this.stompClient.active) {
+                message.error("聊天室未连接，无法发送消息！");
+                return;
+            }
+
             try {
                 const meetingId = this.$route.query.meetingId;
                 const userId = this.$store.getters['auth/userId'];
-                const response = await api.post('api/meeting-record',{
-                    meetingId : meetingId,
-                    speakerId : userId,
-                    msgType : '纯文本',
-                    msgContent : this.newChatMessage
+                const userInfo = this.$store.getters['auth/userInfo'];
+
+                const chatMessage = {
+                    meetingId: meetingId,
+                    expertId: userId,
+                    userAccount: userInfo ? userInfo.account : '未知用户',
+                    type: 'CHAT',
+                    payload: this.newChatMessage,
+                    timestamp: Date.now()
+                };
+
+                this.stompClient.publish({
+                    destination: '/app/chat',
+                    body: JSON.stringify(chatMessage),
                 });
-                if(response.data.succeed){
-                    message.success("发送新消息成功");
-                }else{
-                    message.error("发送消息失败");
-                }
+
+                this.newChatMessage = '';
+
             } catch (error) {
-                message.error("请检查文本内容");
-                console.log(error);
+                message.error("发送消息失败，请检查网络或刷新重试。");
+                console.error("Send message error:", error);
             }
-            this.fetchChatHistory;
-            this.chatHistory.push({ user: username, text: this.newChatMessage });//前端本地广播
-            this.newChatMessage = '';
-            this.$nextTick(() => {
-                const chatHistoryEl = this.$refs.chatHistory;
-                if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
-            });
         },
+
         handleHost(){ 
             this.hostModalVisible = true;
             this.getMeetingMembers();
@@ -559,11 +675,12 @@ export default {
                     params:{ meetingId }
                 });
                 if(response.data.succeed){
-                    const data = response.data.data.records;
-                    this.chatHistory = data.map(msg =>({
+                    const data = response.data.data;
+                    this.chatHistory = data.slice().reverse().map(msg =>({
                         ...msg,
                         user: msg.userAccount,
                         text: msg.msgContent,
+                        timestamp: msg.recordCreated
                     }));
                 }else{
                     message.error("获取消息历史失败",response.data);
@@ -623,7 +740,6 @@ export default {
         async setAllMuteStatus(mute) {
             const newStatus = mute ? '已禁言' : '可发言';
             const actionName = mute ? '禁言' : '解禁';
-            // 对除管理员外的所有专家执行操作
             const promises = this.expertList
                 .filter(expert => expert.role !== '会议管理员')
                 .map(expert => {
@@ -666,11 +782,10 @@ export default {
                 cancelText: '取消',
                 onOk: async () => {
                     try {
-                        // 提升目标专家为新的管理员,后端会自动把原原专家降为参会专家
                         const promoteResponse = await api.put('/api/mp/role', { 
                             mpId: targetExpert.mpId,
                             expertId: targetExpert.expertId,
-                            meetingRole: '会议管理员' // 设置角色为“会议管理员” 
+                            meetingRole: '会议管理员'
                         });
 
                         if (!promoteResponse.data || !promoteResponse.data.succeed) { 
@@ -678,28 +793,14 @@ export default {
                             return;
                         }
                         
-                        // 步骤2: 将原管理员降级为普通成员
-                        //const demoteResponse = await api.put('/api/mp/role', { 
-                        //    mpId: currentAdmin.mpId,
-                        //    expertId: currentAdmin.expertId,
-                         //   meetingRole: '参会成员' // 设置角色为“参会成员” 
-                        //});
-
-                        ///if (!demoteResponse.data || !demoteResponse.data.succeed) {
-                        //    console.log(demoteResponse.data);
-                         //   message.error(`降级原管理员失败: ${demoteResponse.data.message || '未知错误'}`);
-                         //   this.getMeetingMembers();
-                          //  this.$route // 即使失败也要刷新，以防出现两个管理员的状态
-                          //  return;
-                        //}
                         message.success('管理员已成功转让!');
-                        await this.getMeetingMembers(); // 操作成功后刷新列表
+                        await this.getMeetingMembers();
                         this.hostModalVisible = false;
                         this.$router.push({ path: '/multiexpert/detail', query: { id: this.$route.query.id, meetingId:this.$route.query.meetingId  } });
                     } catch (error) {
                         console.error("管理员转让失败:", error);
                         message.error('网络请求失败，管理员转让操作未完成。');
-                        this.getMeetingMembers(); // 发生异常时也刷新列表
+                        this.getMeetingMembers();
                     }
                 },
             });
@@ -756,23 +857,133 @@ export default {
             }, 1000);
         },
         handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
+        toggleVoiceConnection() {
+            if (this.isVoiceConnected) {
+                this.disconnectFromVoice();
+            } else {
+                this.connectToVoice();
+            }
+        },
+
+        // 【新增】连接到语音房间
+        async connectToVoice() {
+            const meetingId = this.$route.query.meetingId;
+            const userInfo = this.$store.getters['auth/userInfo'];
+
+            if (!meetingId || !userInfo) {
+                message.error("无法获取会议或用户信息，无法加入语音。");
+                return;
+            }
+
+            try {
+                // 1. 后端获取 Token
+                const response = await api.post('/api/livekit/token', {
+                    roomName: `meeting-${meetingId}`, 
+                    participantIdentity: userInfo.account, 
+                });
+
+                const { token } = response.data;
+                if (!token) {
+                    message.error("获取语音授权失败！");
+                    return;
+                }
+
+                // 2. 创建并连接到 Room
+                this.livekitRoom = new Room();
+                const livekitUrl = 'ws://127.0.0.1:7880'; 
+
+                message.info('正在连接语音服务...');
+                await this.livekitRoom.connect(livekitUrl, token);
+
+                this.livekitRoom
+            .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                console.log('✅ 成功订阅到新的轨道', {
+                    trackSid: track.sid,
+                    kind: track.kind,
+                    participant: participant.identity
+                });
+                if (track.kind === 'audio') {
+                    const element = track.attach(); 
+                    // 将这个元素直接添加到页面的 body 中，使其可以播放声音
+                    document.body.appendChild(element); 
+                }
+            })
+            .on(RoomEvent.TrackSubscriptionFailed, (trackSid, participant) => {
+                console.error('❌ 订阅轨道失败', {
+                    trackSid: trackSid,
+                    participant: participant.identity
+                });
+                // 这个事件是诊断问题的关键！
+            })
+            .on(RoomEvent.ConnectionStateChanged, (state) => {
+                console.log('🔗 连接状态改变:', state);
+                // 观察状态是否从 connecting -> connected
+            });
+
+                // 3. 成功连接后，开启麦克风
+                await this.livekitRoom.localParticipant.setMicrophoneEnabled(true);
+
+                this.isVoiceConnected = true;
+                this.isMutedBySelf = false;
+                message.success('语音已连接！');
+
+                //  监听其他事件
+                this.livekitRoom.on(RoomEvent.ParticipantConnected, (participant) => {
+                    message.info(`${participant.identity} 加入了语音。`);
+                });
+                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
+                    message.warn(`${participant.identity} 离开了语音。`);
+                });
+
+            } catch (error) {
+                console.error("连接语音失败:", error);
+                message.error("连接语音失败，请检查网络或联系管理员。");
+                if (this.livekitRoom) {
+                    this.livekitRoom.disconnect();
+                    this.livekitRoom = null;
+                }
+            }
+        },
+
+        async disconnectFromVoice() {
+            if (this.livekitRoom) {
+            // 在断开连接前，先手动停止所有本地轨道的发布，特别是麦克风
+            this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+
+            // 使用 await 确保断开操作完成后再继续
+            await this.livekitRoom.disconnect();
+        
+            // 更新前端状态
+            this.livekitRoom = null;
+            this.isVoiceConnected = false;
+            message.warn('语音已断开。');
+            }
+        },
+
+        // 切换自己的麦克风状态
+        toggleSelfMute() {
+            if (!this.livekitRoom) return;
+            const newMuteState = !this.isMutedBySelf;
+            this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
+            this.isMutedBySelf = newMuteState;
+            message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
+        }
     },
 }
 </script>
 
 <style scoped>
-/* 规范 1.2.2 & 1.2.3: 全局字体、颜色、背景 */
 .vulnerability-assessment-container {
     padding: 24px;
-    background-color: #F7F8FB; /* 规范辅助色  */
-    font-family: "Microsoft YaHei", "微软雅黑", sans-serif; /* 规范全局字体  */
-    color: #666666; /* 规范正文颜色  */
-    font-size: 12px; /* 规范正文字号  */
+    background-color: #F7F8FB;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+    color: #666666;
+    font-size: 12px;
 }
 .ant-form-text {
     display: inline-block;
     min-height: 32px;
-    line-height: 32px; /* 对齐输入框高度 */
+    line-height: 32px;
     width: 100%;
     padding: 0 11px;
     color: #666666;
@@ -781,29 +992,24 @@ export default {
     border-radius: 4px;
     word-break: break-all;
 }
-/* 规范 1.2.2: 标题文字 */
 .card-section>>>.ant-card-head-title,
 .panel-title {
     font-size: 14px !important; 
     color: #333333 !important; 
 }
-
-/* 规范 1.2.5 & 1.2.3: 主按钮样式 */
 .vulnerability-assessment-container >>> .ant-btn-primary {
-    background-color: #2BBAFF; /* 规范链接/高亮色作为正常态 */
+    background-color: #2BBAFF;
     border-color: #2BBAFF; 
 }
 .vulnerability-assessment-container >>> .ant-btn-primary:hover,
 .vulnerability-assessment-container >>> .ant-btn-primary:focus {
-    background-color: #26649D; /* 规范主色作为悬浮/焦点态  */
+    background-color: #26649D;
     border-color: #26649D; 
 }
 .vulnerability-assessment-container >>> .ant-btn-primary:active {
-    background-color: #20507a; /* 主色加深作为激活态 */
+    background-color: #20507a;
     border-color: #20507a;
 }
-
-/* 规范 1.2.5: 次要按钮样式 */
 .vulnerability-assessment-container >>> .ant-btn:not(.ant-btn-primary) {
     background-color: #FFFFFF;
     border: 1px solid #d9d9d9;
@@ -814,8 +1020,6 @@ export default {
     border-color: #2BBAFF;
     color: #2BBAFF;
 }
-
-/* 规范 1.2.6: 表单控件高亮色 */
 .vulnerability-assessment-container >>> .ant-input:focus,
 .vulnerability-assessment-container >>> .ant-input:hover,
 .vulnerability-assessment-container >>> .ant-input-affix-wrapper:focus,
@@ -824,22 +1028,18 @@ export default {
 .vulnerability-assessment-container >>> .ant-select-open .ant-select-selection,
 .vulnerability-assessment-container >>> .ant-select-focused .ant-select-selection,
 .vulnerability-assessment-container >>> .ant-calendar-picker:hover .ant-input {
-    border-color: #2BBAFF; /* */
+    border-color: #2BBAFF;
     box-shadow: 0 0 0 2px rgba(43, 186, 255, 0.2);
 }
-
-/* 规范 1.2.6: 复选框样式 */
 .vulnerability-assessment-container >>> .ant-checkbox-checked .ant-checkbox-inner {
-    background-color: #2BBAFF; /* */
-    border-color: #2BBAFF; /* */
+    background-color: #2BBAFF;
+    border-color: #2BBAFF;
 }
 .vulnerability-assessment-container >>> .ant-checkbox-wrapper:hover .ant-checkbox-inner,
 .vulnerability-assessment-container >>> .ant-checkbox:hover .ant-checkbox-inner,
 .vulnerability-assessment-container >>> .ant-checkbox-input:focus+.ant-checkbox-inner {
     border-color: #2BBAFF;
 }
-
-/* 规范 1.2.6: 单选按钮组样式 */
 .vulnerability-assessment-container >>> .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
     background: #2BBAFF;
     border-color: #2BBAFF;
@@ -849,12 +1049,10 @@ export default {
     background: #26649D;
     border-color: #26649D;
 }
-
 .card-section {
     margin-bottom: 16px;
-    background-color: #FFFFFF; /* 规范辅助色  */
+    background-color: #FFFFFF;
 }
-
 .card-section>>>.ant-card-body {
     padding: 16px;
 }
@@ -867,49 +1065,39 @@ export default {
     display: table;
     clear: both;
 }
-
 .ant-form-item {
     margin-bottom: 12px;
 }
-
-/* 确保垂直布局的label有下边距 */
 .ant-form-vertical .ant-form-item-label {
     padding-bottom: 4px !important;
 }
-
 .opinion-assistant-btn {
     margin-top: 8px;
     float: right;
 }
-
 .footer-buttons {
     margin-top: 24px;
     text-align: left;
 }
-
 .retrieval-panel {
-    background-color: #fff; /* 规范辅助色  */
+    background-color: #fff;
     padding: 24px;
     border-radius: 2px;
     height: 100%;
 }
-
 .panel-title {
     font-weight: 500;
     margin-bottom: 16px;
 }
-
 .ant-checkbox-group {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
 }
-
 .ant-checkbox-wrapper {
     margin-left: 0 !important;
     margin-bottom: 8px;
 }
-
 .retrieval-request-box,
 .retrieval-result-box {
     border: 1px solid #d9d9d9;
@@ -918,18 +1106,15 @@ export default {
     margin-bottom: 16px;
     border-radius: 2px;
 }
-
 .box-title {
     font-weight: 500;
     margin-bottom: 12px;
     color: #333333;
     font-size: 13px;
 }
-
 .retrieval-result-box .ant-radio-group {
     margin-bottom: 16px;
 }
-
 .display-area {
     border: 1px dashed #d9d9d9;
     min-height: 150px;
@@ -940,16 +1125,12 @@ export default {
     background-color: #fafafa;
     border-radius: 2px;
 }
-
-/* 弹窗样式 */
 .host-modal-content {
     padding: 16px 0;
 }
-
 .experts-card {
     margin-bottom: 16px;
 }
-
 .experts-header {
     display: flex;
     justify-content: space-between;
@@ -958,24 +1139,20 @@ export default {
     padding-bottom: 12px;
     border-bottom: 1px solid #f0f0f0;
 }
-
 .experts-count {
     font-size: 14px;
     color: #666;
     font-weight: 500;
 }
-
 .global-controls {
     display: flex;
     gap: 8px;
 }
-
 .experts-list {
     max-height: 300px;
     overflow-y: auto;
     margin-bottom: 16px;
 }
-
 .expert-item {
     display: flex;
     justify-content: space-between;
@@ -987,70 +1164,56 @@ export default {
     background-color: #fafafa;
     transition: all 0.3s ease;
 }
-
 .expert-item:hover {
     background-color: #f5f5f5;
     border-color: #d9d9d9;
 }
-
 .expert-item.muted {
     background-color: #fff2f0;
     border-color: #ffccc7;
 }
-
 .expert-info {
     display: flex;
     align-items: center;
     flex: 1;
 }
-
 .expert-avatar {
     margin-right: 12px;
     background-color: #2BBAFF;
 }
-
 .expert-details {
     flex: 1;
 }
-
 .expert-name {
     font-size: 14px;
     font-weight: 500;
     color: #333;
     margin-bottom: 4px;
 }
-
 .expert-role {
     font-size: 12px;
     color: #666;
 }
-
 .expert-status {
     margin-left: 12px;
 }
-
 .expert-controls {
     display: flex;
     align-items: center;
 }
-
 .add-expert-section {
     padding-top: 16px;
     border-top: 1px solid #f0f0f0;
 }
-
 .modal-footer {
     text-align: right;
     padding-top: 16px;
     border-top: 1px solid #f0f0f0;
     margin-top: 16px;
 }
-
 .modal-footer .ant-btn {
     margin-left: 8px;
 }
-
-/* 聊天弹窗样式 */
 .chat-history {
     height: 350px;
     overflow-y: auto;
