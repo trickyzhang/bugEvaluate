@@ -151,9 +151,10 @@
                         style="margin-left: 8px;"
                         class="opinion-assistant-btn"
                         @click="toggleSelfMute"
+                        :disabled="isMutedByHost"
                     >               
-                    <a-icon :type="isMutedBySelf ? 'mic' : 'stop'" />
-                        {{ isMutedBySelf ? '取消禁麦' : '麦克风静音' }}
+                    <a-icon :type="isMutedBySelf || isMutedByHost ? 'stop' : 'mic'" />
+                        {{ isMutedBySelf || isMutedByHost ? '取消禁麦' : '麦克风静音' }}
                     </a-button>
                 </a-card>
             </a-col>
@@ -205,10 +206,10 @@
                                 <a-radio-button value="llm">大模型生成结果</a-radio-button>
                             </a-radio-group>
                             <div class="display-area">
-                                <p>展示区域</p>
+                                <pre>{{ retrievalDisplay }}</pre>
                             </div>
                         </div>
-                            <a-button type="primary" block @click="shareData()" >共享数据</a-button>
+                        <a-button type="primary" block @click="shareData()" >共享数据</a-button>
                     </a-form>
                 </div>
             </a-col>
@@ -308,101 +309,69 @@
                 </a-form-item>
             </a-form>
         </a-modal>
+
+        <a-modal
+            title="数据共享"
+            :visible="shareConfirmModalVisible"
+            @ok="acceptSharedData"
+            @cancel="() => { shareConfirmModalVisible = false; }"
+            okText="接受"
+            cancelText="拒绝"
+        >
+            <p v-if="incomingSharedData">
+                来自专家 <strong>{{ incomingSharedData.userAccount }}</strong> 的共享数据，是否要接收并应用到您的数据检索面板？
+            </p>
+        </a-modal>
     </div>
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Icon} from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Icon } from 'ant-design-vue';
 import api from '@/utils/axios';
-
-
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { Room, RoomEvent } from 'livekit-client';
 
 export default {
-    name: 'VulnerabilityAssessment',
+    name: 'VulnerabilityAssessmentDetail', 
     components: {
-        'a-button': Button,
-        'a-row': Row,
-        'a-col': Col,
-        'a-card': Card,
-        'a-form': Form,
-        'a-form-item': Form.Item,
-        'a-input': Input,
-        'a-checkbox-group': Checkbox.Group,
-        'a-checkbox': Checkbox,
-        'a-radio-group': Radio.Group,
-        'a-radio-button': Radio.Button,
-        'a-select': Select,
-        'a-select-option': Select.Option,
-        'a-range-picker': DatePicker.RangePicker,
-        'a-textarea': Input.TextArea,
-        'a-modal': Modal,
-        'a-icon': Icon,
+        'a-button': Button, 'a-row': Row, 'a-col': Col, 'a-card': Card, 'a-form': Form,
+        'a-form-item': Form.Item, 'a-input': Input, 'a-checkbox-group': Checkbox.Group,
+        'a-checkbox': Checkbox, 'a-radio-group': Radio.Group, 'a-radio-button': Radio.Button,
+        'a-select': Select, 'a-select-option': Select.Option, 'a-range-picker': DatePicker.RangePicker,
+        'a-textarea': Input.TextArea, 'a-modal': Modal, 'a-icon': Icon,
     },
     data() {
         return {
-            // stompClient 用于存储 STOMP 客户端实例
+            livekitToken: null,
             stompClient: null,
-            // subscription 用于存储订阅对象
-            subscription: null,
+            subscriptions: {},
+            isMutedByHost: false,
+            shareConfirmModalVisible: false,
+            incomingSharedData: null,
             form: {
-                basic: {
-                    cveID: '',
-                    cveType: '',
-                    softwareType: '',
-                    cveTitle: '',
-                    cveDescription: '',
-                },
+                basic: { cveID: '', cveType: '', softwareType: '', cveTitle: '', cveDescription: '' },
                 threatIntelligence: { field1: '', field2: '', fieldN: '' },
-                religion: { field1:'', field2:'', },
-                autoSoft: { 
-                    value: '',
-                    weapon: '',
-                    service: '',
-                    exploitability: '',
-                },
-                explain: { 
-                    overallValue: '', 
-                    exposure: '',
-                    risk: '',
-                },
+                religion: { field1:'', field2:'' },
+                autoSoft: { value: '', weapon: '', service: '', exploitability: '' },
+                explain: { overallValue: '', exposure: '', risk: '' },
                 overallOpinion: '',
             },
             retrieval: {
-                sources: [],
-                dateRange: [],
-                keywords: '',
-                vulnType: undefined,
-                other: '',
-                resultView: 'table',
+                sources: [], dateRange: [], keywords: '',
+                vulnType: undefined, other: '', resultView: 'table',
             },
-            chatModalVisible: false,
-            newChatMessage: '',
-            chatHistory: [],
-            // 算法弹窗
-            algorithmModalVisible: false,
-            modalLoading: false,
-            algorithmParams: {
-                paramA: '默认值1',
-                paramB: '默认值2',
-                paramC: '默认值3',
-                paramD: '默认值4',
-                modificationReason: '', 
-            },
-            // 可解释性弹窗
-            explainabilityModalVisible: false,
-            explainabilityModalLoading: false,
-            explainabilityParams: {
-                overallValue: undefined,
-                exposure: undefined,
-                risk: undefined,
-                modificationReason: '',
-            },
-            livekitRoom: null,
-            isVoiceConnected: false,
-            isMutedBySelf: false,
+            chatModalVisible: false, newChatMessage: '', chatHistory: [],
+            algorithmModalVisible: false, modalLoading: false,
+            algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
+            explainabilityModalVisible: false, explainabilityModalLoading: false,
+            explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
+            livekitRoom: null, isVoiceConnected: false, isMutedBySelf: false,
+        }
+    },
+    computed: {
+        retrievalDisplay() {
+            return JSON.stringify(this.retrieval, null, 2);
         }
     },
     created() {
@@ -411,85 +380,176 @@ export default {
         this.initWebSocket();
     },
     beforeDestroy() {
-        // 组件销毁前断开 WebSocket 连接
+        this.leaveRoom();
         this.disconnectWebSocket();
         if (this.livekitRoom) {
             this.livekitRoom.disconnect();
         }
     },
     methods: {
+        
         formatTimestamp(timestamp) {
             if (!timestamp) return '';
             return new Date(timestamp).toLocaleString();
         },
-
         initWebSocket() {
             const meetingId = this.$route.query.meetingId;
-            if (!meetingId) {
-                message.error("无法获取会议ID,无法连接聊天室");
+            const authToken = this.$store.getters['auth/authToken'];
+            if (!meetingId || !authToken) {
+                message.error("无法获取会议ID或用户凭证,无法连接");
                 return;
             }
-
-            const authToken = this.$store.getters['auth/authToken'];
 
             this.stompClient = new Client({
                 brokerURL: 'ws://127.0.0.1:8080/ws', 
                 webSocketFactory: () => new SockJS('http://127.0.0.1:8080/ws'),
-                connectHeaders: {
-                  Authorization: authToken,
-                },
-                //debug: (str) => { console.log('STOMP: ' + str); },
+                connectHeaders: { Authorization: authToken },
                 reconnectDelay: 5000,
             });
 
             this.stompClient.onConnect = frame => {
-                console.log('Connected to WebSocket: ' + frame);
-                message.success('成功连接到会议聊天室！');
+                message.success('成功连接到会议服务！');
+                console.log('Connected to WebSocket: ' + frame)
+                this.joinRoom(); // 连接成功后立即加入房间
 
-                // 订阅回调以处理带时间戳的消息
-                this.subscription = this.stompClient.subscribe('/topic/meeting/' + meetingId, (message) => {
-                    const receivedMsg = JSON.parse(message.body);
-                    
-                    if (receivedMsg.type === "CHAT" && receivedMsg.payload) {
-                        // 将包含完整信息的新对象推入 chatHistory
-                        this.chatHistory.push({
-                            user: receivedMsg.userAccount || '未知用户',
-                            text: receivedMsg.payload,
-                            timestamp: receivedMsg.timestamp 
-                        });
+                // 订阅会议广播消息
+                this.subscriptions.meeting = this.stompClient.subscribe('/topic/meeting/' + meetingId, (message) => {
+                    this.handleMeetingMessage(JSON.parse(message.body));
+                });
 
-                        // 自动滚动到底部
-                        this.$nextTick(() => {
-                            const chatHistoryEl = this.$refs.chatHistory;
-                            if(chatHistoryEl) { chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight; }
-                        });
+                // 订阅个人错误消息
+                this.subscriptions.errors = this.stompClient.subscribe('/user/queue/errors', (error) => {
+                    const errorBody = JSON.parse(error.body);
+                    message.error(`系统错误: ${errorBody.payload.message || '未知错误'}`);
+                    if (errorBody.payload.message === '非法成员') {
+                        message.warn('您无权加入此会议，即将退出。');
+                        this.handleClick2();
+                    }
+                });
+
+                // 订阅LiveKit Token
+                this.subscriptions.livekit = this.stompClient.subscribe("/user/queue/livekit-token", (livekitMsg) => {
+                    const msgObj = JSON.parse(livekitMsg.body);
+                    if (msgObj.type === "LIVEKIT_TOKEN" && msgObj.payload) {
+                    console.log("Received LiveKit Token via WebSocket, storing for later use.");
+                    this.livekitToken = msgObj.payload; 
                     }
                 });
             };
 
             this.stompClient.onStompError = frame => {
-                console.error('Broker reported error: ' + frame.headers['message']);
-                message.error('聊天发生错误: ' + frame.headers['message']);
+                message.error('WebSocket连接发生错误: ' + frame.headers['message']);
             };
 
             this.stompClient.activate();
         },
-
-        // 重写 WebSocket 断开连接方法
-        disconnectWebSocket() {
-            // 先取消订阅
-            if (this.subscription) {
-                this.subscription.unsubscribe();
-                this.subscription = null;
+        handleMeetingMessage(msg) { 
+            const currentUserId = this.$store.getters['auth/userId'];
+            switch (msg.type) {
+                case "CHAT":
+                    this.chatHistory.push({ user: msg.userAccount || '未知用户', text: msg.payload, timestamp: msg.timestamp });
+                    this.$nextTick(() => { if (this.$refs.chatHistory) this.$refs.chatHistory.scrollTop = this.$refs.chatHistory.scrollHeight; });
+                    break;
+                case "MUTE":
+                    if (msg.payload && msg.payload.expertId === currentUserId) {
+                        this.isMutedByHost = true;
+                        if (this.livekitRoom) this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+                        message.warn('您已被主持人禁言。');
+                    }
+                    break;
+                case "UNMUTE":
+                    if (msg.payload && msg.payload.expertId === currentUserId) {
+                        this.isMutedByHost = false;
+                        message.success('主持人已解除对您的禁言。');
+                    }
+                    break;
+                case "SHARE":
+                     if (msg.expertId !== currentUserId) {
+                        this.incomingSharedData = msg;
+                        this.shareConfirmModalVisible = true;
+                    }
+                    break;
+                case "JOIN":
+                case "LEAVE":
+                    message.info(`${msg.userAccount} ${msg.type === 'JOIN' ? '加入了' : '离开了'}会议。`);
+                    break;
             }
-            // 然后停用客户端
+        },
+        disconnectWebSocket() {
             if (this.stompClient) {
-                this.stompClient.deactivate(); // 使用 deactivate
+                Object.values(this.subscriptions).forEach(sub => sub.unsubscribe());
+                this.subscriptions = {};
+                this.stompClient.deactivate();
                 this.stompClient = null;
                 console.log('WebSocket disconnected.');
             }
         },
+        joinRoom() {
+            const joinMessage = {
+                meetingId: this.$route.query.meetingId,
+                expertId: this.$store.getters['auth/userId'],
+                userAccount: this.$store.getters['auth/userInfo'].account,
+                type: 'JOIN', payload: null, timestamp: Date.now()
+            };
+            this.stompClient.publish({
+                destination: '/app/join',
+                body: JSON.stringify(joinMessage)
+            });
+        },
 
+        leaveRoom() {
+            if (this.stompClient && this.stompClient.active) {
+                const leaveMessage = {
+                    meetingId: this.$route.query.meetingId,
+                    expertId: this.$store.getters['auth/userId'],
+                    userAccount: this.$store.getters['auth/userInfo'].account,
+                    type: 'LEAVE', payload: null, timestamp: Date.now()
+                };
+                this.stompClient.publish({
+                    destination: '/app/leave',
+                    body: JSON.stringify(leaveMessage)
+                });
+            }
+        },
+
+        shareData() {
+            if (!this.stompClient || !this.stompClient.active) {
+                message.error("无法共享，连接已断开。");
+                return;
+            }
+            const dataToShare = {
+                sources: this.retrieval.sources,
+                dateRange: this.retrieval.dateRange,
+                keywords: this.retrieval.keywords,
+                vulnType: this.retrieval.vulnType,
+                other: this.retrieval.other,
+                resultView: this.retrieval.resultView,
+            };
+
+            const shareMessage = {
+                meetingId: this.$route.query.meetingId,
+                expertId: this.$store.getters['auth/userId'],
+                userAccount: this.$store.getters['auth/userInfo'].account,
+                type: 'SHARE',
+                payload: dataToShare,
+                timestamp: Date.now()
+            };
+
+            this.stompClient.publish({
+                destination: '/app/share',
+                body: JSON.stringify(shareMessage)
+            });
+            message.success('数据已共享！');
+        },
+        
+        acceptSharedData() {
+            if (this.incomingSharedData && this.incomingSharedData.payload) {
+                this.retrieval = { ...this.retrieval, ...this.incomingSharedData.payload };
+                message.success('已接收共享数据。');
+            }
+            this.shareConfirmModalVisible = false;
+            this.incomingSharedData = null;
+        },
         async fetchDetails() {
             const id = this.$route.query.id; 
             if (!id) {
@@ -510,7 +570,7 @@ export default {
                     if (data.threatIntel) {
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
                         this.form.threatIntelligence.field2 = data.threatIntel.field2;
-                        this.form.threatIntelligence.fieldN = data.threatIntel.field3;
+                        this.form.threatIntelligence.field3 = data.threatIntel.field3;
                     }
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
                         data.dimVOList.forEach(item => {
@@ -548,17 +608,18 @@ export default {
                 return;
             }
             try {
-                const response = await api.get('api/meeting-record/list',{
+                const response =await api.get('api/meeting-record/list',{
                     params:{ meetingId }
                 });
                 if(response.data.succeed){
                     const data = response.data.data;
                     this.chatHistory = data.slice().reverse().map(msg =>({
+                        ...msg,
                         user: msg.userAccount,
                         text: msg.msgContent,
                         timestamp: msg.recordCreated
                     }));
-                } else {
+                }else{
                     message.error("获取消息历史失败",response.data);
                 }
             } catch (error) {
@@ -566,48 +627,28 @@ export default {
                 console.log(error);
             }
         },
-        // 返回列表前，先断开连接
         handleClick2() { 
+            this.leaveRoom(); 
             this.disconnectWebSocket(); 
             this.$router.push('/multiexpert'); 
         },
+
         handleText() { this.chatModalVisible = true; },
         handleChatModalCancel() { this.chatModalVisible = false; },
 
         async handleSendMessage() {
-            if (!this.newChatMessage.trim()) return;
-            // 检查 stompClient 是否存在且处于激活状态
-            if (!this.stompClient || !this.stompClient.active) {
-                message.error("聊天室未连接，无法发送消息！");
-                return;
-            }
-
-            try {
-                const meetingId = this.$route.query.meetingId;
-                const userId = this.$store.getters['auth/userId'];
-                const userInfo = this.$store.getters['auth/userInfo'];
-
-                const chatMessage = {
-                    meetingId: meetingId,
-                    expertId: userId,
-                    userAccount: userInfo ? userInfo.account : '未知用户',
-                    type: 'CHAT',
-                    payload: this.newChatMessage,
-                    timestamp: Date.now()
-                };
-
-                // publish 方法发送消息
-                this.stompClient.publish({
-                    destination: '/app/chat',
-                    body: JSON.stringify(chatMessage),
-                });
-
-                this.newChatMessage = '';
-
-            } catch (error) {
-                message.error("发送消息失败，请检查网络或刷新重试。");
-                console.error("Send message error:", error);
-            }
+            if (!this.newChatMessage.trim() || !this.stompClient || !this.stompClient.active) return;
+            const chatMessage = {
+                meetingId: this.$route.query.meetingId,
+                expertId: this.$store.getters['auth/userId'],
+                userAccount: this.$store.getters['auth/userInfo'].account,
+                type: 'CHAT', payload: this.newChatMessage, timestamp: Date.now()
+            };
+            this.stompClient.publish({
+                destination: '/app/chat',
+                body: JSON.stringify(chatMessage)
+            });
+            this.newChatMessage = '';
         },
         showAlgorithmModal() {
             this.algorithmParams.modificationReason = '';
@@ -660,110 +701,101 @@ export default {
             }, 1000);
         },
         handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
+
         toggleVoiceConnection() {
             if (this.isVoiceConnected) {
                 this.disconnectFromVoice();
             } else {
-                this.connectToVoice();
+                this.connectToVoice(); 
             }
         },
 
         async connectToVoice() {
-            const meetingId = this.$route.query.meetingId;
-            const userInfo = this.$store.getters['auth/userInfo'];
+            if (this.livekitRoom) return;
+    
+            if (this.livekitToken) {
+                this.connectToVoiceWithToken(this.livekitToken);
+            } else {
+                message.warn("语音服务正在准备中，请稍后再试。");
+            }
+        },
 
-            if (!meetingId || !userInfo) {
-                message.error("无法获取会议或用户信息，无法加入语音。");
+        async connectToVoiceWithToken(token) {
+            if (!token) {
+                message.error("获取语音授权失败！");
                 return;
             }
-
             try {
-                const response = await api.post('/api/livekit/token', {
-                    roomName: `meeting-${meetingId}`,
-                    participantIdentity: userInfo.account,
-                });
-
-                const { token } = response.data;
-                if (!token) {
-                    message.error("获取语音授权失败！");
-                    return;
-                }
-
                 this.livekitRoom = new Room();
                 const livekitUrl = 'ws://10.13.1.104:7880';
-
                 message.info('正在连接语音服务...');
                 await this.livekitRoom.connect(livekitUrl, token);
 
-                this.livekitRoom
-            .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                console.log('✅ 成功订阅到新的轨道', {
-                    trackSid: track.sid,
-                    kind: track.kind,
-                    participant: participant.identity
-                });
-                if (track.kind === 'audio') {
-                    const element = track.attach(); 
-                    // 将这个元素直接添加到页面的 body 中，使其可以播放声音
-                    document.body.appendChild(element); 
-                }
-            })
-            .on(RoomEvent.TrackSubscriptionFailed, (trackSid, participant) => {
-                console.error('❌ 订阅轨道失败', {
-                    trackSid: trackSid,
-                    participant: participant.identity
-                });
-            })
-            .on(RoomEvent.ConnectionStateChanged, (state) => {
-                console.log('🔗 连接状态改变:', state);
-            });
-
-                await this.livekitRoom.localParticipant.setMicrophoneEnabled(true);
+                await this.livekitRoom.localParticipant.setMicrophoneEnabled(!this.isMutedBySelf && !this.isMutedByHost);
 
                 this.isVoiceConnected = true;
-                this.isMutedBySelf = false;
                 message.success('语音已连接！');
 
-                this.livekitRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-                    message.info(`${participant.identity} 加入了语音。`);
-                });
-                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
-                    message.warn(`${participant.identity} 离开了语音。`);
+                // 定义一个统一的音轨处理函数
+                const handleAudioTrack = (track) => {
+                    if (track.kind === 'audio') {
+                        // 将音频元素附加到body，使其可以播放
+                        document.body.appendChild(track.attach());
+                    }
+                };
+
+                // 处理已经存在于房间中的参与者
+                this.livekitRoom.remoteParticipants.forEach(participant => {
+                    participant.trackPublications.forEach(publication => {
+                        // 如果音轨已订阅并且存在，则直接处理
+                        if (publication.track) {
+                            handleAudioTrack(publication.track);
+                        }
+                    });
                 });
 
+                // 处理后续加入的参与者及其音轨
+                this.livekitRoom.on(RoomEvent.TrackSubscribed, (track) => {
+                    handleAudioTrack(track);
+                });
+
+                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, p => message.warn(`${p.identity} 离开了语音。`));
+        
             } catch (error) {
-                console.error("连接语音失败:", error);
-                message.error("连接语音失败，请检查网络或联系管理员。");
-                if (this.livekitRoom) {
-                    this.livekitRoom.disconnect();
-                    this.livekitRoom = null;
-                }
+                message.error("连接语音失败: " + error.message);
+                if (this.livekitRoom) this.livekitRoom.disconnect();
+                this.livekitRoom = null;
             }
         },
 
         async disconnectFromVoice() {
             if (this.livekitRoom) {
-                this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
-                await this.livekitRoom.disconnect();
-                this.livekitRoom = null;
-                this.isVoiceConnected = false;
-                message.warn('语音已断开。');
+            // 在断开连接前，先手动停止所有本地轨道的发布，特别是麦克风
+            this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+
+            // 使用 await 确保断开操作完成后再继续
+            await this.livekitRoom.disconnect();
+        
+            // 更新前端状态
+            this.livekitRoom = null;
+            this.isVoiceConnected = false;
+            message.warn('语音已断开。');
             }
         },
 
         toggleSelfMute() {
-            if (!this.livekitRoom) return;
+            if (!this.livekitRoom || this.isMutedByHost) return;
             const newMuteState = !this.isMutedBySelf;
             this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
             this.isMutedBySelf = newMuteState;
             message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
         }
-    },
+    }
 }
 </script>
 
-
 <style scoped>
+
 .vulnerability-assessment-container {
     padding: 24px;
     background-color: #F7F8FB;
@@ -913,7 +945,14 @@ export default {
     background-color: #fafafa;
     border-radius: 2px;
 }
-
+.display-area pre {
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-all;
+    width: 100%;
+    padding: 10px;
+    color: #333;
+}
 /* 聊天弹窗样式 */
 .chat-history {
     height: 350px;
