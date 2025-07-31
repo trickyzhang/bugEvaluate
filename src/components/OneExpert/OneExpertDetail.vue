@@ -134,11 +134,12 @@
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
                     <a-button class="opinion-assistant-btn">大模型生成</a-button>
+                    <a-button class="opinion-assistant-btn" style="margin-left: 8px;" @click="handleSaveOpinion">保存结果</a-button>
                 </a-card>
 
                 <div class="footer-buttons">
                     <a-button style="margin-left: 8px;" @click="startEval">开始评估</a-button>
-                    <a-button style="margin-left: 8px;" type="primary" @click="handleSaveAll">保存结果</a-button>
+                    <a-button style="margin-left: 8px;" type="primary" @click="handleSaveAll">结束评估</a-button>
                     <a-button style="margin-left: 8px;" @click="handleClick2">返回列表</a-button>
                 </div>
             </a-col>
@@ -347,6 +348,8 @@ export default {
                 risk: undefined,
                 modificationReason: '',
             },
+            metricInfo: [], //可解释性分析结果
+            evalReportTitle: '',
         }
     },
     created() {
@@ -400,25 +403,34 @@ export default {
                         });
                     }
 
-                    // 4. 映射 "自动化评估可解释性分析结果"
+                    // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
-                        data.metricVOList.forEach(item => {
-                            switch (item.metricCode) {
-                                case '漏洞价值': 
-                                    this.form.explain.overallValue = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞暴露度':
-                                    this.form.explain.exposure = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞风险':
-                                    this.form.explain.risk = item.originalAnalysisRate;
-                                    break;
-                            }
-                        });
+                        this.metricInfo = data.metricVOList.map(item => ({ 
+                            metricId: item.metricId,
+                            metricCode: item.metricCode
+                    }));
+
+                    console.log(data.metricVOList);
+                    console.log(this.metricInfo);
+
+                    data.metricVOList.forEach(item => {
+                        switch (item.metricCode) {
+                            case '漏洞价值': 
+                                this.form.explain.overallValue = item.originalAnalysisRate;
+                                break;
+                            case '漏洞暴露度':
+                                this.form.explain.exposure = item.originalAnalysisRate;
+                                break;
+                            case '漏洞风险':
+                                this.form.explain.risk = item.originalAnalysisRate;
+                                break;
+                        }
+                    });
                     }
                     
                     // 5. 映射 "总体评估意见"
                     this.form.overallOpinion = data.evalReportContent;
+                    this.evalReportTitle = data.evalReportTitle;
 
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
@@ -469,7 +481,8 @@ export default {
             this.explainabilityParams.modificationReason = '';
             this.explainabilityModalVisible = true;
         },
-        handleExplainabilitySave() {
+        async handleExplainabilitySave() {
+            // 前端表单校验
             if (!this.explainabilityParams.modificationReason) {
                 message.warn('请输入修改理由');
                 return;
@@ -480,17 +493,66 @@ export default {
             }
 
             this.explainabilityModalLoading = true;
-            console.log("正在保存可解释性分析结果:", this.explainabilityParams);
-            
-            setTimeout(() => {
-                this.form.explain.overallValue = this.explainabilityParams.overallValue;
-                this.form.explain.exposure = this.explainabilityParams.exposure;
-                this.form.explain.risk = this.explainabilityParams.risk;
 
-                message.success('可解释性分析结果已更新！');
+            try {
+                // 从存储的 metricInfo 中查找各项的 ID
+                const valueMetric = this.metricInfo.find(m => m.metricCode === '漏洞价值');
+                const exposureMetric = this.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+                const riskMetric = this.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+                // 如果缺少任何一项的ID信息，则无法提交
+                if (!valueMetric || !exposureMetric || !riskMetric) {
+                    message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                    this.explainabilityModalLoading = false;
+                    return;
+                }
+
+                // 构建符合接口要求的请求体
+                const payload = {
+                    evalId: this.$route.query.id,
+                    evalExpert: this.$store.getters['auth/userId'], 
+                    metricList: [
+                        {
+                            metricId: valueMetric.metricId,
+                            metricCode: valueMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.overallValue
+                        },
+                        {
+                            metricId: exposureMetric.metricId,
+                            metricCode: exposureMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.exposure
+                        },
+                        {
+                            metricId: riskMetric.metricId,
+                            metricCode: riskMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.risk
+                        }
+                    ],
+                    adjustedReason: this.explainabilityParams.modificationReason
+                };
+
+                const response = await api.put("/api/metric-eval", payload);
+
+                if (response.data.succeed) {
+                    // 请求成功后，用修改的值更新前端页面显示
+                    this.form.explain.overallValue = this.explainabilityParams.overallValue;
+                    this.form.explain.exposure = this.explainabilityParams.exposure;
+                    this.form.explain.risk = this.explainabilityParams.risk;
+
+                    message.success('可解释性分析结果已成功更新！');
+                    this.explainabilityModalVisible = false; // 关闭弹窗
+                } else {
+                    // API返回业务错误
+                    message.error('保存失败: ' + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                // 网络或其他请求错误
+                console.error("保存可解释性分析结果失败:", error);
+                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
+            } finally {
+                // 无论成功或失败，都停止加载状态
                 this.explainabilityModalLoading = false;
-                this.explainabilityModalVisible = false;
-            }, 1000);
+            }
         },
         handleExplainabilityCancel() {
             this.explainabilityModalVisible = false;
@@ -523,7 +585,27 @@ export default {
                 message.error("评估结束失败");
                 console.log(error);
             }
-        }
+        },
+        async handleSaveOpinion(){
+            const evalId = this.$route.query.id;
+            try {
+                const response = await api.put("api/eval/content",{
+                    evalId: evalId,
+                    evalReportTitle: this.evalReportTitle,
+                    evalReportContent: this.form.overallOpinion,
+                    aiMeetingSummary: null,
+                });
+                if(response.data.succeed){
+                    message.info("修改成功");
+                }else{
+                    message.error("保存意见失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("保存总体意见失败");
+                console.log(error);
+            }
+        },
     },
 }
 </script>

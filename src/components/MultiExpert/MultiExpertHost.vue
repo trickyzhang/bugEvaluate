@@ -698,7 +698,11 @@ export default {
             }
             try {
                 // 调用参会成员查询接口 
-                const response = await api.get(`/api/mp/list/${meetingId}`);
+                const response = await api.get(`/api/mp/list/${meetingId}`,{
+                    params:{
+                        expertId: this.$store.getters['auth/userId'],
+                    }
+                });
                 if (response.data && response.data.succeed) {
                     this.expertList = response.data.data.map(expert => ({
                         ...expert,
@@ -707,12 +711,13 @@ export default {
                         isMuted: expert.speakStatus === '已禁言', 
                         avatar: '' 
                     }));
+                    console.log(this.expertList);
                 } else {
                     message.error("获取参会成员列表失败: " + (response.data.message || '未知错误'));
                 }
             } catch (error) {
                 console.error("获取参会成员列表失败:", error);
-                message.error('网络请求失败，请检查或联系管理员。');
+                message.error('网络请求失败，请检查或联系管理员。'+error);
             }
         },
 
