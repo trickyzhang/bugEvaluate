@@ -717,15 +717,29 @@ export default {
                             }
                         });
                     }
+
+                    // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
+                        this.metricInfo = data.metricVOList.map(item => ({ 
+                            metricId: item.metricId,
+                            metricCode: item.metricCode
+                    }));
+
                         data.metricVOList.forEach(item => {
                             switch (item.metricCode) {
-                                case '漏洞价值': this.form.explain.overallValue = item.originalAnalysisRate; break;
-                                case '漏洞暴露度': this.form.explain.exposure = item.originalAnalysisRate; break;
-                                case '漏洞风险': this.form.explain.risk = item.originalAnalysisRate; break;
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.originalAnalysisRate;
+                                    break;
                             }
                         });
                     }
+
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
                     message.success(`成功加载漏洞 ${id} 的详情。`);
@@ -936,7 +950,8 @@ export default {
             this.explainabilityParams.modificationReason = '';
             this.explainabilityModalVisible = true;
         },
-        handleExplainabilitySave() {
+        async handleExplainabilitySave() {
+            // 前端表单校验
             if (!this.explainabilityParams.modificationReason) {
                 message.warn('请输入修改理由');
                 return;
@@ -945,16 +960,68 @@ export default {
                 message.warn('请完成所有字段的选择');
                 return;
             }
+
             this.explainabilityModalLoading = true;
-            console.log("正在保存可解释性分析结果:", this.explainabilityParams);
-            setTimeout(() => {
-                this.form.explain.overallValue = this.explainabilityParams.overallValue;
-                this.form.explain.exposure = this.explainabilityParams.exposure;
-                this.form.explain.risk = this.explainabilityParams.risk;
-                message.success('可解释性分析结果已更新！');
+
+            try {
+                // 从存储的 metricInfo 中查找各项的 ID
+                const valueMetric = this.metricInfo.find(m => m.metricCode === '漏洞价值');
+                const exposureMetric = this.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+                const riskMetric = this.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+                // 如果缺少任何一项的ID信息，则无法提交
+                if (!valueMetric || !exposureMetric || !riskMetric) {
+                    message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                    this.explainabilityModalLoading = false;
+                    return;
+                }
+
+                // 构建符合接口要求的请求体
+                const payload = {
+                    evalId: this.$route.query.id,
+                    evalExpert: this.$store.getters['auth/userId'], 
+                    metricList: [
+                        {
+                            metricId: valueMetric.metricId,
+                            metricCode: valueMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.overallValue
+                        },
+                        {
+                            metricId: exposureMetric.metricId,
+                            metricCode: exposureMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.exposure
+                        },
+                        {
+                            metricId: riskMetric.metricId,
+                            metricCode: riskMetric.metricCode,
+                            adjustedAnalysisRate: this.explainabilityParams.risk
+                        }
+                    ],
+                    adjustedReason: this.explainabilityParams.modificationReason
+                };
+
+                const response = await api.put("/api/metric-eval", payload);
+
+                if (response.data.succeed) {
+                    // 请求成功后，用修改的值更新前端页面显示
+                    this.form.explain.overallValue = this.explainabilityParams.overallValue;
+                    this.form.explain.exposure = this.explainabilityParams.exposure;
+                    this.form.explain.risk = this.explainabilityParams.risk;
+
+                    message.success('可解释性分析结果已成功更新！');
+                    this.explainabilityModalVisible = false; // 关闭弹窗
+                } else {
+                    // API返回业务错误
+                    message.error('保存失败: ' + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                // 网络或其他请求错误
+                console.error("保存可解释性分析结果失败:", error);
+                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
+            } finally {
+                // 无论成功或失败，都停止加载状态
                 this.explainabilityModalLoading = false;
-                this.explainabilityModalVisible = false;
-            }, 1000);
+            }
         },
         handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
 

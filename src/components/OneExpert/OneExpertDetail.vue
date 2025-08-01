@@ -410,22 +410,19 @@ export default {
                             metricCode: item.metricCode
                     }));
 
-                    console.log(data.metricVOList);
-                    console.log(this.metricInfo);
-
-                    data.metricVOList.forEach(item => {
-                        switch (item.metricCode) {
-                            case '漏洞价值': 
-                                this.form.explain.overallValue = item.originalAnalysisRate;
-                                break;
-                            case '漏洞暴露度':
-                                this.form.explain.exposure = item.originalAnalysisRate;
-                                break;
-                            case '漏洞风险':
-                                this.form.explain.risk = item.originalAnalysisRate;
-                                break;
-                        }
-                    });
+                        data.metricVOList.forEach(item => {
+                            switch (item.metricCode) {
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.originalAnalysisRate;
+                                    break;
+                            }
+                        });
                     }
                     
                     // 5. 映射 "总体评估意见"
