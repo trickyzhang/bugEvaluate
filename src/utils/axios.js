@@ -1,8 +1,9 @@
 import axios from 'axios'
 import store from '@/components/store'
+import config from '@/config'
 
 const api = axios.create({
-  baseURL: 'http://127.0.0.1:8080/',
+  baseURL: config.api.baseURL + '/',
 })
 
 // 请求拦截器：自动添加认证头

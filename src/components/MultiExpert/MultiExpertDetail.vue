@@ -157,6 +157,8 @@
                         {{ isMutedBySelf || isMutedByHost ? '取消禁麦' : '麦克风静音' }}
                     </a-button>
                 </a-card>
+
+                
             </a-col>
 
             <a-col :span="10">
@@ -331,6 +333,7 @@ import api from '@/utils/axios';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { Room, RoomEvent } from 'livekit-client';
+import config from '@/config';
 
 export default {
     name: 'VulnerabilityAssessmentDetail', 
@@ -401,8 +404,8 @@ export default {
             }
 
             this.stompClient = new Client({
-                brokerURL: 'ws://127.0.0.1:8080/ws', 
-                webSocketFactory: () => new SockJS('http://127.0.0.1:8080/ws'),
+                brokerURL: config.websocket.brokerURL, 
+                webSocketFactory: () => new SockJS(config.websocket.webSocketUrl),
                 connectHeaders: { Authorization: authToken },
                 reconnectDelay: 5000,
             });
@@ -727,9 +730,8 @@ export default {
             }
             try {
                 this.livekitRoom = new Room();
-                const livekitUrl = 'ws://10.13.1.104:7880';
                 message.info('正在连接语音服务...');
-                await this.livekitRoom.connect(livekitUrl, token);
+                await this.livekitRoom.connect(config.livekit.url, token);
 
                 await this.livekitRoom.localParticipant.setMicrophoneEnabled(!this.isMutedBySelf && !this.isMutedByHost);
 
