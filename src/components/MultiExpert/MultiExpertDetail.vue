@@ -132,10 +132,14 @@
                 <a-card title="总体评估意见" :bordered="false" class="card-section">
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">开始评估</a-button>
-                    <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn">保存结果</a-button>
-                    <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
+                    <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleSaveOpinion">保存结果</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
+                </a-card>
+
+                <div>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn" @click="startEval">开始评估</a-button>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn" @click="endEval">结束评估</a-button>
+                    <a-button style="margin-left: 8px;" @click="returnList" class="opinion-assistant-btn">返回列表</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
                     <a-button 
                         style="margin-left: 8px;" 
@@ -145,6 +149,14 @@
                     >                   
                     <a-icon :type="isVoiceConnected ? 'phone' : 'sound'" />
                         {{ isVoiceConnected ? '断开语音' : '连接语音' }}
+                    </a-button>
+                    <a-button 
+                        style="margin-left: 8px;" 
+                        class="opinion-assistant-btn"
+                        @click="showVoiceTestModal"
+                    >                   
+                        <a-icon type="tool" />
+                        语音诊断
                     </a-button>
                     <a-button
                         v-if="isVoiceConnected"
@@ -156,7 +168,7 @@
                     <a-icon :type="isMutedBySelf || isMutedByHost ? 'stop' : 'mic'" />
                         {{ isMutedBySelf || isMutedByHost ? '取消禁麦' : '麦克风静音' }}
                     </a-button>
-                </a-card>
+                </div>
 
                 
             </a-col>
@@ -324,6 +336,12 @@
                 来自专家 <strong>{{ incomingSharedData.userAccount }}</strong> 的共享数据，是否要接收并应用到您的数据检索面板？
             </p>
         </a-modal>
+
+        <VoiceTestModal 
+            :visible="voiceTestModalVisible"
+            @ok="handleVoiceTestOk"
+            @cancel="handleVoiceTestCancel"
+        />
     </div>
 </template>
 
@@ -334,6 +352,7 @@ import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import { Room, RoomEvent } from 'livekit-client';
 import config from '@/config';
+import VoiceTestModal from './VoiceTestModal.vue';
 
 export default {
     name: 'VulnerabilityAssessmentDetail', 
@@ -343,6 +362,7 @@ export default {
         'a-checkbox': Checkbox, 'a-radio-group': Radio.Group, 'a-radio-button': Radio.Button,
         'a-select': Select, 'a-select-option': Select.Option, 'a-range-picker': DatePicker.RangePicker,
         'a-textarea': Input.TextArea, 'a-modal': Modal, 'a-icon': Icon,
+        VoiceTestModal,
     },
     data() {
         return {
@@ -370,6 +390,8 @@ export default {
             explainabilityModalVisible: false, explainabilityModalLoading: false,
             explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
             livekitRoom: null, isVoiceConnected: false, isMutedBySelf: false,
+            voiceTestModalVisible: false,
+            evalReportTitle:' ',
         }
     },
     computed: {
@@ -381,6 +403,7 @@ export default {
         this.fetchDetails();
         this.fetchChatHistory();
         this.initWebSocket();
+        this.checkBrowserCompatibility();
     },
     beforeDestroy() {
         this.leaveRoom();
@@ -426,7 +449,7 @@ export default {
                     message.error(`系统错误: ${errorBody.payload.message || '未知错误'}`);
                     if (errorBody.payload.message === '非法成员') {
                         message.warn('您无权加入此会议，即将退出。');
-                        this.handleClick2();
+                        this.returnList();
                     }
                 });
 
@@ -595,6 +618,7 @@ export default {
                         });
                     }
                     this.form.overallOpinion = data.evalReportContent;
+                    this.evalReportTitle = data.evalReportTitle;
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
                     message.error('获取漏洞详情失败: ' + (response.data.message || '未知错误'));
@@ -630,7 +654,7 @@ export default {
                 console.log(error);
             }
         },
-        handleClick2() { 
+        returnList() { 
             this.leaveRoom(); 
             this.disconnectWebSocket(); 
             this.$router.push('/multiexpert'); 
@@ -728,7 +752,24 @@ export default {
                 message.error("获取语音授权失败！");
                 return;
             }
+
+            // 检查浏览器是否支持 getUserMedia
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                message.error("您的浏览器不支持媒体设备访问，请使用现代浏览器（Chrome、Firefox、Safari、Edge）");
+                return;
+            }
+
+            // 检查是否使用 HTTPS（本地开发除外）
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                message.error("语音功能需要 HTTPS 连接，请使用 HTTPS 访问或联系管理员");
+                return;
+            }
+
             try {
+                // 先请求麦克风权限
+                message.info('正在请求麦克风权限...');
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                
                 this.livekitRoom = new Room();
                 message.info('正在连接语音服务...');
                 await this.livekitRoom.connect(config.livekit.url, token);
@@ -764,9 +805,53 @@ export default {
                 this.livekitRoom.on(RoomEvent.ParticipantDisconnected, p => message.warn(`${p.identity} 离开了语音。`));
         
             } catch (error) {
-                message.error("连接语音失败: " + error.message);
-                if (this.livekitRoom) this.livekitRoom.disconnect();
-                this.livekitRoom = null;
+                console.error("语音连接错误详情:", error);
+                
+                let errorMessage = "连接语音失败: ";
+                
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    errorMessage += "麦克风权限被拒绝，请在浏览器设置中允许麦克风访问，然后刷新页面重试。";
+                    message.error(errorMessage);
+                    
+                    // 显示详细的权限指导
+                    this.$confirm({
+                        title: '麦克风权限被拒绝',
+                        content: `
+                            <div style="text-align: left;">
+                                <p><strong>解决方法：</strong></p>
+                                <p>1. 点击浏览器地址栏左侧的锁定图标</p>
+                                <p>2. 找到"麦克风"选项，选择"允许"</p>
+                                <p>3. 刷新页面后重新尝试连接语音</p>
+                                <p><strong>或者：</strong></p>
+                                <p>1. 打开浏览器设置</p>
+                                <p>2. 找到"隐私和安全性" → "网站设置" → "麦克风"</p>
+                                <p>3. 允许当前网站使用麦克风</p>
+                            </div>
+                        `,
+                        dangerouslyUseHTMLString: true,
+                        okText: '我知道了',
+                        cancelText: '取消'
+                    });
+                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    errorMessage += "未检测到麦克风设备，请检查麦克风是否正确连接。";
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage += "您的浏览器不支持此功能，请使用 Chrome、Firefox、Safari 或 Edge 浏览器。";
+                } else if (error.message && error.message.includes('getUserMedia')) {
+                    errorMessage += "浏览器媒体设备访问失败，请检查浏览器设置或尝试使用其他浏览器。";
+                } else {
+                    errorMessage += error.message || "未知错误";
+                }
+                
+                message.error(errorMessage);
+                
+                if (this.livekitRoom) {
+                    try {
+                        await this.livekitRoom.disconnect();
+                    } catch (disconnectError) {
+                        console.error("断开连接时出错:", disconnectError);
+                    }
+                    this.livekitRoom = null;
+                }
             }
         },
 
@@ -791,7 +876,105 @@ export default {
             this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
             this.isMutedBySelf = newMuteState;
             message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
-        }
+        },
+
+        checkBrowserCompatibility() {
+            // 检查浏览器是否支持必要的 API
+            const compatibilityIssues = [];
+            
+            if (!navigator.mediaDevices) {
+                compatibilityIssues.push('浏览器不支持媒体设备访问');
+            }
+            
+            if (!navigator.mediaDevices?.getUserMedia) {
+                compatibilityIssues.push('浏览器不支持 getUserMedia API');
+            }
+            
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                compatibilityIssues.push('语音功能需要 HTTPS 连接');
+            }
+            
+            // 检查是否为支持的浏览器
+            const userAgent = navigator.userAgent.toLowerCase();
+            const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
+            const isFirefox = userAgent.includes('firefox');
+            const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
+            const isEdge = userAgent.includes('edge');
+            
+            if (!isChrome && !isFirefox && !isSafari && !isEdge) {
+                compatibilityIssues.push('建议使用 Chrome、Firefox、Safari 或 Edge 浏览器');
+            }
+            
+            if (compatibilityIssues.length > 0) {
+                console.warn('浏览器兼容性检查发现问题:', compatibilityIssues);
+                // 可以选择性地显示警告信息
+                if (compatibilityIssues.some(issue => issue.includes('HTTPS'))) {
+                    message.warn('语音功能需要 HTTPS 连接，当前使用 HTTP 可能无法正常工作');
+                }
+            }
+        },
+
+        showVoiceTestModal() {
+            this.voiceTestModalVisible = true;
+        },
+
+        handleVoiceTestOk() {
+            this.voiceTestModalVisible = false;
+            message.success('语音诊断完成');
+        },
+
+        handleVoiceTestCancel() {
+            this.voiceTestModalVisible = false;
+        },
+        async startEval(){
+            try {
+                const response = await api.put("api/eval/start/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("开始评估");
+                }else{
+                    message.error("开始评估失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估开始失败");
+                console.log(error);
+            }
+        },
+        async endEval(){
+            //结束评估
+            try {
+                const response = await api.put("api/eval/confirm/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("评估完成");
+                }else{
+                    message.error("结束评估失败")
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估结束失败");
+                console.log(error);
+            }
+        },
+        async handleSaveOpinion(){
+            const evalId = this.$route.query.id;
+            try {
+                const response = await api.put("api/eval/content",{
+                    evalId: evalId,
+                    evalReportTitle: this.evalReportTitle,
+                    evalReportContent: this.form.overallOpinion,
+                    aiMeetingSummary: null,
+                });
+                if(response.data.succeed){
+                    message.info("修改成功");
+                }else{
+                    message.error("保存意见失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("保存总体意见失败");
+                console.log(error);
+            }
+        },
     }
 }
 </script>

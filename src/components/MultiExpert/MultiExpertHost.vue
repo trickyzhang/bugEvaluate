@@ -132,9 +132,13 @@
                 <a-card title="总体评估意见" :bordered="false" class="card-section">
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
-                    <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn">保存结果</a-button>
-                    <a-button style="margin-left: 8px;" @click="handleClick2" class="opinion-assistant-btn">返回列表</a-button>
+                    <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleSaveOpinion">保存结果</a-button>
                     <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
+                </a-card>
+
+                <div>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn" @click="endEval">结束评估</a-button>
+                    <a-button style="margin-left: 8px;" @click="returnList" class="opinion-assistant-btn">返回列表</a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleText">文字聊天</a-button>
                     <a-button 
                         style="margin-left: 8px;" 
@@ -164,8 +168,9 @@
                         {{ isMutedBySelf || isMutedByHost ? '取消禁麦' : '麦克风静音' }}
                     </a-button>
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleHost">主持会议</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">开始评估</a-button>
-                </a-card>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn" @click="startEval">开始评估</a-button>
+                </div>
+
             </a-col>
 
             <a-col :span="10">
@@ -462,6 +467,8 @@ export default {
             explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
             livekitRoom: null, isVoiceConnected: false, isMutedBySelf: false,
             voiceTestModalVisible: false,
+            evalReportTitle: '',
+            metricInfo: [], //可解释性分析结果
         }
     },
     computed: {
@@ -520,7 +527,7 @@ export default {
                     message.error(`系统错误: ${errorBody.payload.message || '未知错误'}`);
                     if (errorBody.payload.message === '非法成员') {
                         message.warn('您无权加入此会议，即将退出。');
-                        this.handleClick2();
+                        this.returnList();
                     }
                 });
 
@@ -671,7 +678,7 @@ export default {
             this.shareConfirmModalVisible = false;
             this.incomingSharedData = null;
         },
-        // fetchDetails, handleClick2 (modified), handleText, handleChatModalCancel, handleSendMessage (modified)
+        // fetchDetails, returnList (modified), handleText, handleChatModalCancel, handleSendMessage (modified)
         // handleHost, handleHostModalOk, handleHostModalCancel, fetchChatHistory, getMeetingMembers
         // toggleExpertMute, setAllMuteStatus, muteAllExperts, unmuteAllExperts, transferAdmin
         // showAlgorithmModal, handleAlgorithmSave, handleAlgorithmCancel
@@ -720,6 +727,7 @@ export default {
                         });
                     }
                     this.form.overallOpinion = data.evalReportContent;
+                    this.evalReportTitle = data.evalReportTitle;
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
                     message.error('获取漏洞详情失败: ' + (response.data.message || '未知错误'));
@@ -786,7 +794,7 @@ export default {
             }
         },
         
-        handleClick2() { 
+        returnList() { 
             this.leaveRoom(); 
             this.disconnectWebSocket(); 
             this.$router.push('/multiexpert'); 
@@ -1147,7 +1155,56 @@ export default {
 
         handleVoiceTestCancel() {
             this.voiceTestModalVisible = false;
-        }
+        },
+        async startEval(){
+            try {
+                const response = await api.put("api/eval/start/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("开始评估");
+                }else{
+                    message.error("开始评估失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估开始失败");
+                console.log(error);
+            }
+        },
+        async endEval(){
+            //结束评估
+            try {
+                const response = await api.put("api/eval/confirm/"+this.$route.query.id);
+                if(response.data.succeed){
+                    message.info("评估完成");
+                }else{
+                    message.error("结束评估失败")
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("评估结束失败");
+                console.log(error);
+            }
+        },
+        async handleSaveOpinion(){
+            const evalId = this.$route.query.id;
+            try {
+                const response = await api.put("api/eval/content",{
+                    evalId: evalId,
+                    evalReportTitle: this.evalReportTitle,
+                    evalReportContent: this.form.overallOpinion,
+                    aiMeetingSummary: null,
+                });
+                if(response.data.succeed){
+                    message.info("修改成功");
+                }else{
+                    message.error("保存意见失败");
+                    console.log(response.data);
+                }
+            } catch (error) {
+                message.error("保存总体意见失败");
+                console.log(error);
+            }
+        },
     },
 }
 </script>

@@ -139,8 +139,8 @@
 
                 <div class="footer-buttons">
                     <a-button style="margin-left: 8px;" @click="startEval">开始评估</a-button>
-                    <a-button style="margin-left: 8px;" type="primary" @click="handleSaveAll">结束评估</a-button>
-                    <a-button style="margin-left: 8px;" @click="handleClick2">返回列表</a-button>
+                    <a-button style="margin-left: 8px;" type="primary" @click="endEval">结束评估</a-button>
+                    <a-button style="margin-left: 8px;" @click="returnList">返回列表</a-button>
                 </div>
             </a-col>
 
@@ -441,7 +441,7 @@ export default {
                 message.error('网络请求失败，请检查网络或联系管理员。');
             }
         },
-        handleClick2() {
+        returnList() {
             this.$router.push('/oneexpert');
         },
         // 算法弹窗
@@ -571,7 +571,7 @@ export default {
                 console.log(error);
             }
         },
-        async handleSaveAll(){
+        async endEval(){
             //结束评估
             try {
                 const response = await api.put("api/eval/confirm/"+this.$route.query.id);
