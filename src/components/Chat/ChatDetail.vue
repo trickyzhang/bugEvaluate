@@ -25,22 +25,6 @@
               <span class="history-title">{{ chat.title }}</span>
               </div>
           </div>
-
-          <a-divider class="sider-divider" />
-
-          <div class="sider-section-title">知识库</div>
-          <div class="knowledge-base-list">
-              <a-checkbox-group v-model="selectedKnowledgeBases">
-                  <a-checkbox
-                      v-for="kb in knowledgeBases"
-                      :key="kb.id"
-                      :value="kb.id"
-                      class="kb-item"
-                  >
-                      {{ kb.name }}
-                  </a-checkbox>
-              </a-checkbox-group>
-          </div>
         </div>
       </a-layout-sider>
 
@@ -80,12 +64,19 @@
 
         <a-layout-footer class="chat-footer">
           <div class="template-actions">
-              <a-button 
-                  size="small" 
-                  icon="file-text" 
+              <a-button
+                  size="small"
+                  icon="file-text"
                   @click="loadVulnerabilityTemplate"
               >
                   加载漏洞评估模板
+              </a-button>
+
+              <a-button
+                  size="small"
+                  style="margin-left: 8px;"
+              >
+                  更新知识库
               </a-button>
           </div>
 
@@ -114,14 +105,14 @@
 </template>
 
 <script>
-import { Layout, Icon, Button, Avatar, Input, Tooltip, Spin, message, Divider, Checkbox } from 'ant-design-vue';
+import { Layout, Icon, Button, Avatar, Input, Tooltip, Spin, message } from 'ant-design-vue';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import { marked } from 'marked'; 
+import { marked } from 'marked';
 import api from '@/utils/axios';
 
 //多轮对话api
-const AI_GENERATION_API_URL = 'http://10.13.1.104:8002/api/chat/multi-chat'; 
+const AI_GENERATION_API_URL = 'http://10.13.1.104:8002/api/chat/rag';
 
 
 const VULNERABILITY_TEMPLATE = `**漏洞评估请求**
@@ -157,29 +148,25 @@ export default {
     'a-textarea': Input.TextArea,
     'a-tooltip': Tooltip,
     'a-spin': Spin,
-    'a-divider': Divider, 
-    'a-checkbox': Checkbox, 
-    'a-checkbox-group': Checkbox.Group, 
   },
   data() {
     return {
       userInput: '',
-      chatHistory: [], 
-      allMessages: {}, 
+      chatHistory: [],
+      allMessages: {},
       currentChatId: null,
       isLoading: false,
-      isCreatingChat: false, 
+      isCreatingChat: false,
       inputFocused: false,
-      isStreaming: false, 
-      userId: this.$store.getters['auth/userId'] , 
-      knowledgeBases: [
-          { id: 'kb1', name: '漏洞数据' },
-          { id: 'kb2', name: '评测文档' },
-          { id: 'kb3', name: '基本信息' },
-          { id: 'kb4', name: '统一规范' },
-      ],
-      selectedKnowledgeBases: [], 
+      isStreaming: false,
+      userId: this.$store.getters['auth/userId'] ,
       vulnerabilityTemplate: VULNERABILITY_TEMPLATE,
+      params: {
+          temperature: 0,
+          top_p: 0,
+          max_tokens: 0,
+          search_top_k: 0
+        },
     };
   },
   computed: {
@@ -209,13 +196,13 @@ export default {
         try {
             const response = await api.get('api/chat-session/mine', {
                 params: {
-                    expertId: this.userId,  
-                    page: 1, 
-                    size: 10 
+                    expertId: this.userId,
+                    page: 1,
+                    size: 10
                 }
             });
             if (response.data && response.data.succeed) {
-                // Mapping API response to local data structure 
+                // Mapping API response to local data structure
                 this.chatHistory = response.data.data.records.map(chat => ({
                     id: chat.sessionId,
                     title: chat.sessionTitle || `对话 ${chat.sessionId}`
@@ -234,20 +221,20 @@ export default {
             message.error("网络错误，无法加载历史会话。");
         }
     },
-    
+
     /**
      * 获取单个对话的全部信息
      */
     async fetchChatMessages(sessionId) {
-        this.$set(this.allMessages, sessionId, []); // Clear previous messages
+        this.$set(this.allMessages, sessionId, []);
         this.isLoading = true;
         try {
             const response = await api.get(`api/chat-message/${sessionId}/turns`, {
-                params: { page: 1, size: 100 } // Example pagination 
+                params: { page: 1, size: 100 }
             });
             if (response.data && response.data.succeed) {
                 const messages = [];
-                // The API returns 'turns', each containing multiple messages 
+                // The API returns 'turns', each containing multiple messages
                 const turns = response.data.data.records.sort((a, b) => a.turn - b.turn); // Sort turns chronologically
                 for (const turn of turns) {
                     for (const msg of turn.messages) {
@@ -279,7 +266,7 @@ export default {
       try {
           const response = await api.post(`api/chat-session/${this.userId}`);
           if (response.data && response.data.succeed) {
-              const newChatData = response.data.data;  
+              const newChatData = response.data.data;
               const newChat = {
                 id: newChatData.sessionId,
                 title: newChatData.sessionTitle || '新的对话',
@@ -307,11 +294,10 @@ export default {
                 sessionId: this.currentChatId,
                 messages: [
                     { msgRole: "user", content: userMessage.content },
-                    { msgRole: "assistant", content: assistantMessage.rawContent } // Save the full, raw content
+                    { msgRole: "assistant", content: assistantMessage.rawContent }
                 ]
-            }; // 
+            }; //
             await api.post('api/chat-message', payload);
-            // Optional: handle success or failure response 
         } catch (error) {
             console.error("保存会话失败:", error);
             message.error("未能保存此轮对话，请检查网络连接。");
@@ -323,10 +309,10 @@ export default {
      */
     async updateChatTitle(sessionId, newTitle) {
         try {
-            const payload = { sessionId: String(sessionId), sessionTitle: newTitle }; // 
+            const payload = { sessionId: String(sessionId), sessionTitle: newTitle }; //
             const response = await api.put('api/chat-session', payload);
             if(response.data && response.data.succeed) {
-                // Update title in the local history list as well
+                // 同时更新本地存储
                 const chatInHistory = this.chatHistory.find(c => c.id === sessionId);
                 if (chatInHistory) {
                     chatInHistory.title = newTitle;
@@ -334,7 +320,6 @@ export default {
             }
         } catch(error) {
              console.error("更新会话标题失败:", error);
-             // Non-critical error, no need to alert user
         }
     },
 
@@ -345,7 +330,7 @@ export default {
       // Fetch messages for the selected chat instead of reading from a preloaded object
       this.fetchChatMessages(chatId);
     },
-    
+
     async sendMessage() {
       const trimmedInput = this.userInput.trim();
       if (!trimmedInput || this.isLoading || this.isStreaming) return;
@@ -357,22 +342,22 @@ export default {
         role: 'user',
         content: trimmedInput,
       };
-      
+
       this.allMessages[this.currentChatId].push(userMessage);
       this.userInput = '';
       this.isLoading = true;
-      
+
       try {
-        
+
         const response = await axios.post(AI_GENERATION_API_URL, {
           session_id: String(this.currentChatId),
           question: userMessage.content,
-          //knowledge_base_ids: this.selectedKnowledgeBases, 
+          params: this.params
         });
-        
-        this.isLoading = false; 
 
-        const assistantReply = response.data.answer; 
+        this.isLoading = false;
+
+        const assistantReply = response.data.answer;
         if (!assistantReply) {
              throw new Error("API返回格式不正确,未找到'answer'字段");
         }
@@ -380,17 +365,17 @@ export default {
         const assistantMessage = {
             id: uuidv4(),
             role: 'assistant',
-            content: '', 
-            rawContent: assistantReply, 
+            content: '',
+            rawContent: assistantReply,
         };
         this.allMessages[this.currentChatId].push(assistantMessage);
-        
+
         // Frontend streaming effect
         this.streamResponse(assistantReply, this.currentChatId, assistantMessage.id, () => {
              // Step 2: Once streaming is complete, save the turn to our backend
              this.saveTurn(userMessage, assistantMessage);
 
-             // Step 3: If it was the first message, update the chat title 
+             // Step 3: If it was the first message, update the chat title
              if (isFirstMessage) {
                  const newTitle = userMessage.content.substring(0, 20);
                  this.updateChatTitle(this.currentChatId, newTitle);
@@ -400,10 +385,10 @@ export default {
       } catch (error) {
         console.error("API请求失败:", error);
         message.error("消息发送失败，请检查网络或联系管理员。");
-        this.isLoading = false; 
+        this.isLoading = false;
         // Remove the user message that failed to send
         this.allMessages[this.currentChatId].pop();
-      } 
+      }
     },
 
     streamResponse(text, chatId, messageId, onCompleteCallback) {
@@ -425,7 +410,7 @@ export default {
                     onCompleteCallback(); // Execute callback when streaming is done
                 }
             }
-        }, 25); 
+        }, 25);
     },
 
     loadVulnerabilityTemplate() {
@@ -457,6 +442,24 @@ export default {
     formatMessage(text) {
         if (typeof text !== 'string') return '';
         return marked(text, { breaks: true, gfm: true });
+    },
+    async fetchParameters(){
+      const expertId = this.$store.getters['auth/userId'];
+        try {
+            const response = await api.get('api/llm-param/' + expertId);
+            if (response.data.succeed) {
+                this.params.temperature = parseFloat(response.data.data.temperature);
+                this.params.top_p = parseFloat(response.data.data.topP);
+                this.params.max_tokens = parseInt(response.data.data.maxTokens, 10);
+                this.params.search_top_k = parseInt(response.data.data.searchTopK, 10);
+            } else {
+                message.error("获取大模型参数失败");
+                console.log(response.data);
+            }
+        }  catch (error) {
+            message.error("获取大模型参数数据失败");
+            console.log(error);
+        }
     }
   },
 };
@@ -560,7 +563,7 @@ export default {
   background-color: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
   color: #FFFFFF;
-  flex-shrink: 0; 
+  flex-shrink: 0;
 }
 
 .sider-section-title {
@@ -570,15 +573,11 @@ export default {
   margin-bottom: 10px;
   padding-left: 4px;
 }
-.sider-divider {
-  margin: 16px 0;
-  background-color: rgba(255, 255, 255, 0.2);
-}
 
 .history-list {
     overflow-y: auto;
-    flex-grow: 1; 
-    min-height: 100px; 
+    flex-grow: 1;
+    min-height: 100px;
 }
 .history-item {
   color: #e0e0e0;
@@ -615,27 +614,6 @@ export default {
 }
 .delete-icon:hover {
     opacity: 1;
-}
-
-/* --- 知识库列表 --- */
-.knowledge-base-list {
-  overflow-y: auto;
-  flex-shrink: 0; 
-  text-align: left;
-}
-.kb-item {
-    display: block;
-    color: #e0e0e0;
-    margin-bottom: 8px;
-    padding: 4px;
-}
-.kb-item >>> .ant-checkbox-inner {
-    background-color: transparent;
-    border-color: #a0a0a0;
-}
-.kb-item >>> .ant-checkbox-checked .ant-checkbox-inner {
-    background-color: #26649D;
-    border-color: #26649D;
 }
 
 /* --- 聊天面板 --- */

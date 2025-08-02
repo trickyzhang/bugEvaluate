@@ -557,7 +557,6 @@ export default {
             try {
                 // 组装发送给大模型的数据
                 const llmPayload = {
-                    request: "请根据以下信息，生成'自动化评估可解释性分析结果'，包括'漏洞价值'、'暴露度'和'漏洞风险'，并以JSON格式返回，例如 {'overallValue': '严重', 'exposure': '一般', 'risk': '轻微'}",
                     context: {
                         basicInfo: {
                             description: "漏洞基本信息",
@@ -629,12 +628,11 @@ export default {
                 this.explainLLMLoading = false;
             }
         },
-        // 新增方法：大模型辅助生成总体评估意见
+        // 大模型辅助生成总体评估意见
         async generateOpinionWithLLM() {
             this.opinionLLMLoading = true;
             try {
                  const llmPayload = {
-                    request: "请根据以下所有信息，生成一段50-100字的'总体评估意见'。",
                     context: {
                         basicInfo: {
                             description: "漏洞基本信息",
