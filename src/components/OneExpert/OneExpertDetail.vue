@@ -124,16 +124,16 @@
                             </a-col>
                         </a-row>
                     </a-form>
-                    <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 16px;">
+                    <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 8px;">
                         <a-button type="primary" @click="showExplainabilityModal">编辑</a-button>
-                        <a-button>大模型重新判定</a-button>
+                        <a-button @click="generateExplainabilityWithLLM" :loading="explainLLMLoading">大模型辅助生成</a-button>
                     </div>
                 </a-card>
 
                 <a-card title="总体评估意见" :bordered="false" class="card-section">
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
-                    <a-button class="opinion-assistant-btn">大模型生成</a-button>
+                    <a-button class="opinion-assistant-btn" @click="generateOpinionWithLLM" :loading="opinionLLMLoading">大模型辅助生成</a-button>
                     <a-button class="opinion-assistant-btn" style="margin-left: 8px;" @click="handleSaveOpinion">保存结果</a-button>
                 </a-card>
 
@@ -321,6 +321,13 @@ export default {
                 },
                 overallOpinion: '',
             },
+            localStore: {
+                vulnInfo: null,
+                threatIntel: null,
+                religionInfo: null,
+                autoSoft: null,
+                metricInfo: [], 
+            },
             retrieval: {
                 sources: [],
                 dateRange: [],
@@ -342,13 +349,14 @@ export default {
             // 可解释性弹窗
             explainabilityModalVisible: false,
             explainabilityModalLoading: false,
+            explainLLMLoading: false, 
+            opinionLLMLoading: false, 
             explainabilityParams: {
                 overallValue: undefined,
                 exposure: undefined,
                 risk: undefined,
                 modificationReason: '',
             },
-            metricInfo: [], //可解释性分析结果
             evalReportTitle: '',
         }
     },
@@ -367,8 +375,9 @@ export default {
                 if (response.data.succeed) {
                     const data = response.data.data;
 
-                    // 1. 映射 "漏洞基本信息"
+                    // 1. 映射 "漏洞基本信息" 并本地存储
                     if (data.vulnInfo) {
+                        this.localStore.vulnInfo = { ...data.vulnInfo }; 
                         this.form.basic.cveID = data.vulnInfo.cveId;
                         this.form.basic.cveType = data.vulnInfo.cveType;
                         this.form.basic.softwareType = data.vulnInfo.softwareType;
@@ -376,15 +385,17 @@ export default {
                         this.form.basic.cveDescription = data.vulnInfo.cveDescription;
                     }
 
-                    // 2. 映射 "威胁情报来源"
+                    // 2. 映射 "威胁情报来源" 并本地存储
                     if (data.threatIntel) {
+                        this.localStore.threatIntel = { ...data.threatIntel }; 
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
                         this.form.threatIntelligence.field2 = data.threatIntel.field2;
                         this.form.threatIntelligence.field3 = data.threatIntel.field3; 
                     }
 
-                    // 3. 映射 "自动化软件漏洞评估结果"
+                    // 3. 映射 "自动化软件漏洞评估结果" 并本地存储
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
+                        this.localStore.autoSoft = [ ...data.dimVOList ]; 
                         data.dimVOList.forEach(item => {
                             switch (item.dimensionCode) {
                                 case '漏洞价值':
@@ -405,10 +416,10 @@ export default {
 
                     // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
-                        this.metricInfo = data.metricVOList.map(item => ({ 
+                        this.localStore.metricInfo = data.metricVOList.map(item => ({ 
                             metricId: item.metricId,
                             metricCode: item.metricCode
-                    }));
+                        }));
 
                         data.metricVOList.forEach(item => {
                             switch (item.metricCode) {
@@ -428,6 +439,9 @@ export default {
                     // 5. 映射 "总体评估意见"
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
+                    
+                    // 6. 独立获取漏洞地域信息
+                    this.fetchReligionData(id);
 
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
@@ -436,6 +450,27 @@ export default {
             } catch (error) {
                 console.error("获取详情失败:", error);
                 message.error('网络请求失败，请检查网络或联系管理员。');
+            }
+        },
+        // 获取漏洞地域信息
+        async fetchReligionData(id) {
+            try {
+                const response = await api.get(`/api/vuln-location/${id}`); 
+                if (response.data.succeed) {
+                    const religionData = response.data.data;
+                    this.localStore.religionInfo = { ...religionData }; // 本地存储
+                    this.form.religion.field1 = religionData.field1;
+                    this.form.religion.field2 = religionData.field2;
+                } else {
+                     message.error('获取漏洞地域信息失败。');
+                }
+            } catch (error) {
+                 // 模拟成功返回，因为API不存在
+                console.warn("无法从/api/vuln-location获取数据，将使用模拟数据。");
+                const mockReligionData = { field1: '模拟地域A', field2: '模拟地域B' };
+                this.localStore.religionInfo = { ...mockReligionData };
+                this.form.religion.field1 = mockReligionData.field1;
+                this.form.religion.field2 = mockReligionData.field2;
             }
         },
         returnList() {
@@ -456,12 +491,10 @@ export default {
 
             setTimeout(() => {
                 try {
-                    // ... 模拟请求后的更新逻辑 ...
                     this.modalLoading = false;
                     this.algorithmModalVisible = false;
                     message.success('参数已更新，评估结果已重新计算！');
                 } catch (error) {
-                    // ... 错误处理 ...
                     this.modalLoading = false;
                 }
             }, 1500);
@@ -488,71 +521,199 @@ export default {
                 message.warn('请完成所有字段的选择');
                 return;
             }
-
+            
             this.explainabilityModalLoading = true;
 
-            try {
-                // 从存储的 metricInfo 中查找各项的 ID
-                const valueMetric = this.metricInfo.find(m => m.metricCode === '漏洞价值');
-                const exposureMetric = this.metricInfo.find(m => m.metricCode === '漏洞暴露度');
-                const riskMetric = this.metricInfo.find(m => m.metricCode === '漏洞风险');
+            // 从存储的 metricInfo 中查找各项的 ID
+            const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+            const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+            const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
 
-                // 如果缺少任何一项的ID信息，则无法提交
-                if (!valueMetric || !exposureMetric || !riskMetric) {
-                    message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
-                    this.explainabilityModalLoading = false;
-                    return;
-                }
-
-                // 构建符合接口要求的请求体
-                const payload = {
-                    evalId: this.$route.query.id,
-                    evalExpert: this.$store.getters['auth/userId'], 
-                    metricList: [
-                        {
-                            metricId: valueMetric.metricId,
-                            metricCode: valueMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.overallValue
-                        },
-                        {
-                            metricId: exposureMetric.metricId,
-                            metricCode: exposureMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.exposure
-                        },
-                        {
-                            metricId: riskMetric.metricId,
-                            metricCode: riskMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.risk
-                        }
-                    ],
-                    adjustedReason: this.explainabilityParams.modificationReason
-                };
-
-                const response = await api.put("/api/metric-eval", payload);
-
-                if (response.data.succeed) {
-                    // 请求成功后，用修改的值更新前端页面显示
-                    this.form.explain.overallValue = this.explainabilityParams.overallValue;
-                    this.form.explain.exposure = this.explainabilityParams.exposure;
-                    this.form.explain.risk = this.explainabilityParams.risk;
-
-                    message.success('可解释性分析结果已成功更新！');
-                    this.explainabilityModalVisible = false; // 关闭弹窗
-                } else {
-                    // API返回业务错误
-                    message.error('保存失败: ' + (response.data.message || '未知错误'));
-                }
-            } catch (error) {
-                // 网络或其他请求错误
-                console.error("保存可解释性分析结果失败:", error);
-                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
-            } finally {
-                // 无论成功或失败，都停止加载状态
+            if (!valueMetric || !exposureMetric || !riskMetric) {
+                message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
                 this.explainabilityModalLoading = false;
+                return;
             }
+            
+            const payload = {
+                evalId: this.$route.query.id,
+                evalExpert: this.$store.getters['auth/userId'], 
+                metricList: [
+                    { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.overallValue },
+                    { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.exposure },
+                    { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.risk }
+                ],
+                adjustedReason: this.explainabilityParams.modificationReason
+            };
+
+            await this.updateExplainability(payload, true);
         },
         handleExplainabilityCancel() {
             this.explainabilityModalVisible = false;
+        },
+        // 大模型辅助生成可解释性结果
+        async generateExplainabilityWithLLM() {
+            this.explainLLMLoading = true;
+            try {
+                // 组装发送给大模型的数据
+                const llmPayload = {
+                    request: "请根据以下信息，生成'自动化评估可解释性分析结果'，包括'漏洞价值'、'暴露度'和'漏洞风险'，并以JSON格式返回，例如 {'overallValue': '严重', 'exposure': '一般', 'risk': '轻微'}",
+                    context: {
+                        basicInfo: {
+                            description: "漏洞基本信息",
+                            data: this.localStore.vulnInfo,
+                        },
+                        threatIntel: {
+                            description: "威胁情报来源",
+                            data: this.localStore.threatIntel,
+                        },
+                        religionInfo: {
+                            description: "漏洞地域信息",
+                            data: this.localStore.religionInfo,
+                        },
+                        autoSoftResult: {
+                            description: "自动化软件漏洞评估结果",
+                            data: this.localStore.autoSoft,
+                        }
+                    }
+                };
+                console.log(llmPayload);
+
+                // 假设这是调用大模型服务的API
+                // const response = await api.post('/api/llm/generate-explain', llmPayload);
+                // --- MOCK RESPONSE ---
+                // 模拟大模型2秒后返回结果
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const response = {
+                    data: {
+                        succeed: true,
+                        // 模拟大模型返回的数据
+                        data: { overallValue: '严重', exposure: '一般', risk: '轻微' } 
+                    }
+                };
+                // --- END MOCK ---
+
+                if (response.data.succeed) {
+                    const llmResult = response.data.data;
+                    
+                    const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+                    const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+                    const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+                    if (!valueMetric || !exposureMetric || !riskMetric) {
+                        message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                        return;
+                    }
+                    
+                    const updatePayload = {
+                        evalId: this.$route.query.id,
+                        evalExpert: this.$store.getters['auth/userId'], 
+                        metricList: [
+                            { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: llmResult.overallValue },
+                            { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: llmResult.exposure },
+                            { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: llmResult.risk }
+                        ],
+                        adjustedReason: "由大模型辅助生成"
+                    };
+
+                    await this.updateExplainability(updatePayload, false);
+
+                } else {
+                     message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
+                }
+
+            } catch(error) {
+                console.error("大模型辅助生成失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.explainLLMLoading = false;
+            }
+        },
+        // 新增方法：大模型辅助生成总体评估意见
+        async generateOpinionWithLLM() {
+            this.opinionLLMLoading = true;
+            try {
+                 const llmPayload = {
+                    request: "请根据以下所有信息，生成一段50-100字的'总体评估意见'。",
+                    context: {
+                        basicInfo: {
+                            description: "漏洞基本信息",
+                            data: this.localStore.vulnInfo,
+                        },
+                        threatIntel: {
+                            description: "威胁情报来源",
+                            data: this.localStore.threatIntel,
+                        },
+                        religionInfo: {
+                            description: "漏洞地域信息",
+                            data: this.localStore.religionInfo,
+                        },
+                        autoSoftResult: {
+                            description: "自动化软件漏洞评估结果",
+                            data: this.localStore.autoSoft,
+                        },
+                        explainabilityResult: {
+                            description: "自动化评估可解释性分析结果",
+                            data: this.form.explain,
+                        }
+                    }
+                };
+
+                console.log(llmPayload);
+                // 假设这是调用大模型服务的API
+                // const response = await api.post('/api/llm/generate-opinion', llmPayload);
+                // --- MOCK RESPONSE ---
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const mockText = `基于对 ${this.localStore.vulnInfo.cveId} 的综合分析，该漏洞的价值被评定为“${this.form.explain.overallValue}”。考虑到其暴露度为“${this.form.explain.exposure}”且自动化评估风险为“${this.form.explain.risk}”，建议立即采取缓解措施。`;
+                const response = {
+                    data: { succeed: true, data: mockText }
+                };
+                // --- END MOCK ---
+                if (response.data.succeed) {
+                    this.form.overallOpinion = response.data.data;
+                    message.success('大模型已生成评估意见，请确认后保存。');
+                    // 自动调用保存
+                    await this.handleSaveOpinion();
+                } else {
+                    message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("大模型辅助生成意见失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.opinionLLMLoading = false;
+            }
+        },
+        // 重构：将可解释性结果的更新逻辑提取出来
+        async updateExplainability(payload, fromModal) {
+            const loadingState = fromModal ? 'explainabilityModalLoading' : 'explainLLMLoading';
+            this[loadingState] = true;
+            try {
+                const response = await api.put("/api/metric-eval", payload);
+                if (response.data.succeed) {
+                    // 请求成功后，用修改的值更新前端页面显示
+                    const rateMap = payload.metricList.reduce((acc, item) => {
+                        acc[item.metricCode] = item.adjustedAnalysisRate;
+                        return acc;
+                    }, {});
+
+                    this.form.explain.overallValue = rateMap['漏洞价值'];
+                    this.form.explain.exposure = rateMap['漏洞暴露度'];
+                    this.form.explain.risk = rateMap['漏洞风险'];
+
+                    message.success('可解释性分析结果已成功更新！');
+                    if (fromModal) {
+                        this.explainabilityModalVisible = false; // 如果是弹窗触发的，关闭弹窗
+                    }
+                } else {
+                    message.error('保存失败: ' + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("保存可解释性分析结果失败:", error);
+                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
+            } finally {
+                this[loadingState] = false;
+            }
         },
         async startEval(){
             try {
@@ -593,7 +754,7 @@ export default {
                     aiMeetingSummary: null,
                 });
                 if(response.data.succeed){
-                    message.info("修改成功");
+                    message.success("总体评估意见已保存！");
                 }else{
                     message.error("保存意见失败");
                     console.log(response.data);
@@ -731,7 +892,7 @@ export default {
 
 .opinion-assistant-btn {
     margin-top: 8px;
-    float: right;
+    float: center;
 }
 
 .footer-buttons {

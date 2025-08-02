@@ -125,7 +125,7 @@
                     </a-form>
                     <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 16px;">
                         <a-button type="primary" @click="showExplainabilityModal">编辑</a-button>
-                        <a-button>大模型重新判定</a-button>
+                        <a-button @click="generateExplainabilityWithLLM" :loading="explainLLMLoading">大模型辅助生成</a-button>
                     </div>
                 </a-card>
 
@@ -133,7 +133,7 @@
                     <a-textarea v-model="form.overallOpinion" placeholder="点击输入评估意见"
                         :auto-size="{ minRows: 4, maxRows: 6 }" />
                     <a-button style="margin-left: 8px;" type="primary" class="opinion-assistant-btn" @click="handleSaveOpinion">保存结果</a-button>
-                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn">大模型生成</a-button>
+                    <a-button style="margin-left: 8px;" class="opinion-assistant-btn" @click="generateOpinionWithLLM" :loading="opinionLLMLoading">大模型辅助生成</a-button>
                 </a-card>
 
                 <div>
@@ -456,6 +456,14 @@ export default {
                 explain: { overallValue: '', exposure: '', risk: '' },
                 overallOpinion: '',
             },
+
+            localStore: {
+                vulnInfo: null,
+                threatIntel: null,
+                religionInfo: null,
+                autoSoft: null,
+                metricInfo: [], // 可解释性分析结果的原始指标信息
+            },
             retrieval: {
                 sources: [], dateRange: [], keywords: '',
                 vulnType: undefined, other: '', resultView: 'table',
@@ -464,11 +472,12 @@ export default {
             algorithmModalVisible: false, modalLoading: false,
             algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
             explainabilityModalVisible: false, explainabilityModalLoading: false,
+            explainLLMLoading: false, // 新增：大模型生成可解释性结果的加载状态
+            opinionLLMLoading: false, // 新增：大模型生成总体意见的加载状态
             explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
             livekitRoom: null, isVoiceConnected: false, isMutedBySelf: false,
             voiceTestModalVisible: false,
             evalReportTitle: '',
-            metricInfo: [], //可解释性分析结果
         }
     },
     computed: {
@@ -678,12 +687,6 @@ export default {
             this.shareConfirmModalVisible = false;
             this.incomingSharedData = null;
         },
-        // fetchDetails, returnList (modified), handleText, handleChatModalCancel, handleSendMessage (modified)
-        // handleHost, handleHostModalOk, handleHostModalCancel, fetchChatHistory, getMeetingMembers
-        // toggleExpertMute, setAllMuteStatus, muteAllExperts, unmuteAllExperts, transferAdmin
-        // showAlgorithmModal, handleAlgorithmSave, handleAlgorithmCancel
-        // showExplainabilityModal, handleExplainabilitySave, handleExplainabilityCancel
-        // toggleVoiceConnection, connectToVoice, disconnectFromVoice, toggleSelfMute
         
         async fetchDetails() {
             const id = this.$route.query.id; 
@@ -695,19 +698,28 @@ export default {
                 const response = await api.get(`/api/eval/${id}`);
                 if (response.data.succeed) {
                     const data = response.data.data;
+
+                    // 1. 映射 "漏洞基本信息" 并本地存储
                     if (data.vulnInfo) {
+                        this.localStore.vulnInfo = { ...data.vulnInfo }; // 本地存储
                         this.form.basic.cveID = data.vulnInfo.cveId;
                         this.form.basic.cveType = data.vulnInfo.cveType;
                         this.form.basic.softwareType = data.vulnInfo.softwareType;
                         this.form.basic.cveTitle = data.vulnInfo.cveTitle;
                         this.form.basic.cveDescription = data.vulnInfo.cveDescription;
                     }
+
+                    // 2. 映射 "威胁情报来源" 并本地存储
                     if (data.threatIntel) {
+                        this.localStore.threatIntel = { ...data.threatIntel }; // 本地存储
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
                         this.form.threatIntelligence.field2 = data.threatIntel.field2;
                         this.form.threatIntelligence.field3 = data.threatIntel.field3;
                     }
+
+                    // 3. 映射 "自动化软件漏洞评估结果" 并本地存储
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
+                        this.localStore.autoSoft = [ ...data.dimVOList ]; // 本地存储
                         data.dimVOList.forEach(item => {
                             switch (item.dimensionCode) {
                                 case '漏洞价值': this.form.autoSoft.value = item.originalEvalValue; break;
@@ -720,28 +732,27 @@ export default {
 
                     // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
-                        this.metricInfo = data.metricVOList.map(item => ({ 
+                        this.localStore.metricInfo = data.metricVOList.map(item => ({ 
                             metricId: item.metricId,
                             metricCode: item.metricCode
-                    }));
+                        }));
 
                         data.metricVOList.forEach(item => {
                             switch (item.metricCode) {
-                                case '漏洞价值': 
-                                    this.form.explain.overallValue = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞暴露度':
-                                    this.form.explain.exposure = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞风险':
-                                    this.form.explain.risk = item.originalAnalysisRate;
-                                    break;
+                                case '漏洞价值': this.form.explain.overallValue = item.originalAnalysisRate; break;
+                                case '漏洞暴露度': this.form.explain.exposure = item.originalAnalysisRate; break;
+                                case '漏洞风险': this.form.explain.risk = item.originalAnalysisRate; break;
                             }
                         });
                     }
-
+                    
+                    // 5. 映射 "总体评估意见"
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
+                    
+                    // 6. 新增：独立获取漏洞地域信息
+                    this.fetchReligionData(id);
+
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
                     message.error('获取漏洞详情失败: ' + (response.data.message || '未知错误'));
@@ -749,6 +760,25 @@ export default {
             } catch (error) {
                 console.error("获取详情失败:", error);
                 message.error('网络请求失败，请检查网络或联系管理员。');
+            }
+        },
+        async fetchReligionData(id) {
+            try {
+                const response = await api.get(`/api/vuln-location/${id}`); 
+                if (response.data.succeed) {
+                    const religionData = response.data.data;
+                    this.localStore.religionInfo = { ...religionData };
+                    this.form.religion.field1 = religionData.field1;
+                    this.form.religion.field2 = religionData.field2;
+                } else {
+                     message.error('获取漏洞地域信息失败。');
+                }
+            } catch (error) {
+                console.warn("无法从/api/vuln-location获取数据，将使用模拟数据。");
+                const mockReligionData = { field1: '模拟地域A', field2: '模拟地域B' };
+                this.localStore.religionInfo = { ...mockReligionData };
+                this.form.religion.field1 = mockReligionData.field1;
+                this.form.religion.field2 = mockReligionData.field2;
             }
         },
         async fetchChatHistory(){
@@ -784,7 +814,6 @@ export default {
                 return;
             }
             try {
-                // 调用参会成员查询接口 
                 const response = await api.get(`/api/mp/list/${meetingId}`,{
                     params:{
                         expertId: this.$store.getters['auth/userId'],
@@ -798,7 +827,6 @@ export default {
                         isMuted: expert.speakStatus === '已禁言', 
                         avatar: '' 
                     }));
-                    console.log(this.expertList);
                 } else {
                     message.error("获取参会成员列表失败: " + (response.data.message || '未知错误'));
                 }
@@ -834,13 +862,12 @@ export default {
 
         handleHost(){ 
             this.hostModalVisible = true;
-            this.getMeetingMembers(); // Still useful for initial load
+            this.getMeetingMembers();
         },
         handleHostModalOk() { this.hostModalVisible = false; },
         handleHostModalCancel() { this.hostModalVisible = false; },
 
         async toggleExpertMute(expert) {
-            // This method now only initiates the action. The UI update is handled by the WebSocket listener.
             const newStatus = expert.isMuted ? '可发言' : '已禁言'; 
             try { 
                 const response = await api.put('/api/mp/speak', {
@@ -878,7 +905,7 @@ export default {
             } catch(error) {
                 console.error(`全体${actionName}失败:`, error);
                 message.error(`全体${actionName}操作时发生网络错误`);
-                this.getMeetingMembers(); // 发生错误时，重新同步状态
+                this.getMeetingMembers();
             }
         },
         muteAllExperts() { this.setAllMuteStatus(true); },
@@ -951,7 +978,6 @@ export default {
             this.explainabilityModalVisible = true;
         },
         async handleExplainabilitySave() {
-            // 前端表单校验
             if (!this.explainabilityParams.modificationReason) {
                 message.warn('请输入修改理由');
                 return;
@@ -963,80 +989,155 @@ export default {
 
             this.explainabilityModalLoading = true;
 
+            const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+            const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+            const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+            if (!valueMetric || !exposureMetric || !riskMetric) {
+                message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                this.explainabilityModalLoading = false;
+                return;
+            }
+            
+            const payload = {
+                evalId: this.$route.query.id,
+                evalExpert: this.$store.getters['auth/userId'], 
+                metricList: [
+                    { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.overallValue },
+                    { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.exposure },
+                    { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.risk }
+                ],
+                adjustedReason: this.explainabilityParams.modificationReason
+            };
+            
+            await this.updateExplainability(payload, true);
+        },
+        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
+
+        async generateExplainabilityWithLLM() {
+            this.explainLLMLoading = true;
             try {
-                // 从存储的 metricInfo 中查找各项的 ID
-                const valueMetric = this.metricInfo.find(m => m.metricCode === '漏洞价值');
-                const exposureMetric = this.metricInfo.find(m => m.metricCode === '漏洞暴露度');
-                const riskMetric = this.metricInfo.find(m => m.metricCode === '漏洞风险');
-
-                // 如果缺少任何一项的ID信息，则无法提交
-                if (!valueMetric || !exposureMetric || !riskMetric) {
-                    message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
-                    this.explainabilityModalLoading = false;
-                    return;
-                }
-
-                // 构建符合接口要求的请求体
-                const payload = {
-                    evalId: this.$route.query.id,
-                    evalExpert: this.$store.getters['auth/userId'], 
-                    metricList: [
-                        {
-                            metricId: valueMetric.metricId,
-                            metricCode: valueMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.overallValue
-                        },
-                        {
-                            metricId: exposureMetric.metricId,
-                            metricCode: exposureMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.exposure
-                        },
-                        {
-                            metricId: riskMetric.metricId,
-                            metricCode: riskMetric.metricCode,
-                            adjustedAnalysisRate: this.explainabilityParams.risk
-                        }
-                    ],
-                    adjustedReason: this.explainabilityParams.modificationReason
+                const llmPayload = {
+                    request: "请根据以下信息，生成'自动化评估可解释性分析结果'，包括'漏洞价值'、'暴露度'和'漏洞风险'，并以JSON格式返回，例如 {'overallValue': '严重', 'exposure': '一般', 'risk': '轻微'}",
+                    context: {
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft }
+                    }
+                };
+                console.log(llmPayload);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const response = {
+                    data: { succeed: true, data: { overallValue: '严重', exposure: '一般', risk: '轻微' } }
                 };
 
-                const response = await api.put("/api/metric-eval", payload);
-
                 if (response.data.succeed) {
-                    // 请求成功后，用修改的值更新前端页面显示
-                    this.form.explain.overallValue = this.explainabilityParams.overallValue;
-                    this.form.explain.exposure = this.explainabilityParams.exposure;
-                    this.form.explain.risk = this.explainabilityParams.risk;
+                    const llmResult = response.data.data;
+                    const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+                    const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+                    const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+                    if (!valueMetric || !exposureMetric || !riskMetric) {
+                        message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                        return;
+                    }
+                    
+                    const updatePayload = {
+                        evalId: this.$route.query.id,
+                        evalExpert: this.$store.getters['auth/userId'], 
+                        metricList: [
+                            { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: llmResult.overallValue },
+                            { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: llmResult.exposure },
+                            { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: llmResult.risk }
+                        ],
+                        adjustedReason: "由大模型辅助生成"
+                    };
+                    await this.updateExplainability(updatePayload, false);
+                } else {
+                     message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
+                }
+            } catch(error) {
+                console.error("大模型辅助生成失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.explainLLMLoading = false;
+            }
+        },
+
+        async generateOpinionWithLLM() {
+            this.opinionLLMLoading = true;
+            try {
+                 const llmPayload = {
+                    request: "请根据以下所有信息，生成一段50-100字的'总体评估意见'。",
+                    context: {
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft },
+                        explainabilityResult: { description: "自动化评估可解释性分析结果", data: this.form.explain }
+                    }
+                };
+                console.log(llmPayload);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const mockText = `基于对 ${this.localStore.vulnInfo.cveId} 的综合分析，该漏洞的价值被评定为“${this.form.explain.overallValue}”。考虑到其暴露度为“${this.form.explain.exposure}”且自动化评估风险为“${this.form.explain.risk}”，建议立即采取缓解措施。`;
+                const response = { data: { succeed: true, data: mockText } };
+                
+                if (response.data.succeed) {
+                    this.form.overallOpinion = response.data.data;
+                    message.success('大模型已生成评估意见，请确认后保存。');
+                    await this.handleSaveOpinion();
+                } else {
+                    message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("大模型辅助生成意见失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.opinionLLMLoading = false;
+            }
+        },
+
+        async updateExplainability(payload, fromModal) {
+            const loadingState = fromModal ? 'explainabilityModalLoading' : 'explainLLMLoading';
+            this[loadingState] = true;
+            try {
+                const response = await api.put("/api/metric-eval", payload);
+                if (response.data.succeed) {
+                    const rateMap = payload.metricList.reduce((acc, item) => {
+                        acc[item.metricCode] = item.adjustedAnalysisRate;
+                        return acc;
+                    }, {});
+
+                    this.form.explain.overallValue = rateMap['漏洞价值'];
+                    this.form.explain.exposure = rateMap['漏洞暴露度'];
+                    this.form.explain.risk = rateMap['漏洞风险'];
 
                     message.success('可解释性分析结果已成功更新！');
-                    this.explainabilityModalVisible = false; // 关闭弹窗
+                    if (fromModal) {
+                        this.explainabilityModalVisible = false;
+                    }
                 } else {
-                    // API返回业务错误
                     message.error('保存失败: ' + (response.data.message || '未知错误'));
                 }
             } catch (error) {
-                // 网络或其他请求错误
                 console.error("保存可解释性分析结果失败:", error);
                 message.error('网络请求失败，请检查您的网络连接或联系管理员。');
             } finally {
-                // 无论成功或失败，都停止加载状态
-                this.explainabilityModalLoading = false;
+                this[loadingState] = false;
             }
         },
-        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
 
         toggleVoiceConnection() {
             if (this.isVoiceConnected) {
                 this.disconnectFromVoice();
             } else {
-                this.connectToVoice(); // This will now use the token from WebSocket if available
+                this.connectToVoice();
             }
         },
 
         async connectToVoice() {
             if (this.livekitRoom) return;
-    
-            // 检查Token是否已准备好
             if (this.livekitToken) {
                 this.connectToVoiceWithToken(this.livekitToken);
             } else {
@@ -1049,21 +1150,15 @@ export default {
                 message.error("获取语音授权失败！");
                 return;
             }
-
-            // 检查浏览器是否支持 getUserMedia
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 message.error("您的浏览器不支持媒体设备访问，请使用现代浏览器（Chrome、Firefox、Safari、Edge）");
                 return;
             }
-
-            // 检查是否使用 HTTPS（本地开发除外）
             if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
                 message.error("语音功能需要 HTTPS 连接，请使用 HTTPS 访问或联系管理员");
                 return;
             }
-
             try {
-                // 先请求麦克风权限
                 message.info('正在请求麦克风权限...');
                 await navigator.mediaDevices.getUserMedia({ audio: true });
                 
@@ -1076,25 +1171,20 @@ export default {
                 this.isVoiceConnected = true;
                 message.success('语音已连接！');
 
-                // 定义一个统一的音轨处理函数
                 const handleAudioTrack = (track) => {
                     if (track.kind === 'audio') {
-                        // 将音频元素附加到body，使其可以播放
                         document.body.appendChild(track.attach());
                     }
                 };
 
-                // 处理已经存在于房间中的参与者
                 this.livekitRoom.remoteParticipants.forEach(participant => {
                     participant.trackPublications.forEach(publication => {
-                        // 如果音轨已订阅并且存在，则直接处理
                         if (publication.track) {
                             handleAudioTrack(publication.track);
                         }
                     });
                 });
 
-                // 处理后续加入的参与者及其音轨
                 this.livekitRoom.on(RoomEvent.TrackSubscribed, (track) => {
                     handleAudioTrack(track);
                 });
@@ -1103,50 +1193,24 @@ export default {
         
             } catch (error) {
                 console.error("语音连接错误详情:", error);
-                
                 let errorMessage = "连接语音失败: ";
-                
                 if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
                     errorMessage += "麦克风权限被拒绝，请在浏览器设置中允许麦克风访问，然后刷新页面重试。";
-                    message.error(errorMessage);
-                    
-                    // 显示详细的权限指导
                     this.$confirm({
                         title: '麦克风权限被拒绝',
-                        content: `
-                            <div style="text-align: left;">
-                                <p><strong>解决方法：</strong></p>
-                                <p>1. 点击浏览器地址栏左侧的锁定图标</p>
-                                <p>2. 找到"麦克风"选项，选择"允许"</p>
-                                <p>3. 刷新页面后重新尝试连接语音</p>
-                                <p><strong>或者：</strong></p>
-                                <p>1. 打开浏览器设置</p>
-                                <p>2. 找到"隐私和安全性" → "网站设置" → "麦克风"</p>
-                                <p>3. 允许当前网站使用麦克风</p>
-                            </div>
-                        `,
+                        content: `<div style="text-align: left;"><p><strong>解决方法：</strong></p><p>1. 点击浏览器地址栏左侧的锁定图标</p><p>2. 找到"麦克风"选项，选择"允许"</p><p>3. 刷新页面后重新尝试连接语音</p></div>`,
                         dangerouslyUseHTMLString: true,
                         okText: '我知道了',
                         cancelText: '取消'
                     });
                 } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
                     errorMessage += "未检测到麦克风设备，请检查麦克风是否正确连接。";
-                } else if (error.name === 'NotSupportedError') {
-                    errorMessage += "您的浏览器不支持此功能，请使用 Chrome、Firefox、Safari 或 Edge 浏览器。";
-                } else if (error.message && error.message.includes('getUserMedia')) {
-                    errorMessage += "浏览器媒体设备访问失败，请检查浏览器设置或尝试使用其他浏览器。";
                 } else {
                     errorMessage += error.message || "未知错误";
                 }
-                
                 message.error(errorMessage);
-                
                 if (this.livekitRoom) {
-                    try {
-                        await this.livekitRoom.disconnect();
-                    } catch (disconnectError) {
-                        console.error("断开连接时出错:", disconnectError);
-                    }
+                    await this.livekitRoom.disconnect();
                     this.livekitRoom = null;
                 }
             }
@@ -1154,16 +1218,11 @@ export default {
 
         async disconnectFromVoice() {
             if (this.livekitRoom) {
-            // 在断开连接前，先手动停止所有本地轨道的发布，特别是麦克风
-            this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
-
-            // 使用 await 确保断开操作完成后再继续
-            await this.livekitRoom.disconnect();
-        
-            // 更新前端状态
-            this.livekitRoom = null;
-            this.isVoiceConnected = false;
-            message.warn('语音已断开。');
+                this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+                await this.livekitRoom.disconnect();
+                this.livekitRoom = null;
+                this.isVoiceConnected = false;
+                message.warn('语音已断开。');
             }
         },
 
@@ -1176,53 +1235,18 @@ export default {
         },
 
         checkBrowserCompatibility() {
-            // 检查浏览器是否支持必要的 API
-            const compatibilityIssues = [];
-            
-            if (!navigator.mediaDevices) {
-                compatibilityIssues.push('浏览器不支持媒体设备访问');
-            }
-            
             if (!navigator.mediaDevices?.getUserMedia) {
-                compatibilityIssues.push('浏览器不支持 getUserMedia API');
+                message.warn('浏览器不支持媒体设备访问');
             }
-            
-            if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-                compatibilityIssues.push('语音功能需要 HTTPS 连接');
-            }
-            
-            // 检查是否为支持的浏览器
-            const userAgent = navigator.userAgent.toLowerCase();
-            const isChrome = userAgent.includes('chrome') && !userAgent.includes('edge');
-            const isFirefox = userAgent.includes('firefox');
-            const isSafari = userAgent.includes('safari') && !userAgent.includes('chrome');
-            const isEdge = userAgent.includes('edge');
-            
-            if (!isChrome && !isFirefox && !isSafari && !isEdge) {
-                compatibilityIssues.push('建议使用 Chrome、Firefox、Safari 或 Edge 浏览器');
-            }
-            
-            if (compatibilityIssues.length > 0) {
-                console.warn('浏览器兼容性检查发现问题:', compatibilityIssues);
-                // 可以选择性地显示警告信息
-                if (compatibilityIssues.some(issue => issue.includes('HTTPS'))) {
-                    message.warn('语音功能需要 HTTPS 连接，当前使用 HTTP 可能无法正常工作');
-                }
+            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+                message.warn('语音功能需要 HTTPS 连接，当前环境可能无法正常工作');
             }
         },
 
-        showVoiceTestModal() {
-            this.voiceTestModalVisible = true;
-        },
+        showVoiceTestModal() { this.voiceTestModalVisible = true; },
+        handleVoiceTestOk() { this.voiceTestModalVisible = false; message.success('语音诊断完成'); },
+        handleVoiceTestCancel() { this.voiceTestModalVisible = false; },
 
-        handleVoiceTestOk() {
-            this.voiceTestModalVisible = false;
-            message.success('语音诊断完成');
-        },
-
-        handleVoiceTestCancel() {
-            this.voiceTestModalVisible = false;
-        },
         async startEval(){
             try {
                 const response = await api.put("api/eval/start/"+this.$route.query.id);
@@ -1230,26 +1254,21 @@ export default {
                     message.info("开始评估");
                 }else{
                     message.error("开始评估失败");
-                    console.log(response.data);
                 }
             } catch (error) {
                 message.error("评估开始失败");
-                console.log(error);
             }
         },
         async endEval(){
-            //结束评估
             try {
                 const response = await api.put("api/eval/confirm/"+this.$route.query.id);
                 if(response.data.succeed){
                     message.info("评估完成");
                 }else{
                     message.error("结束评估失败")
-                    console.log(response.data);
                 }
             } catch (error) {
                 message.error("评估结束失败");
-                console.log(error);
             }
         },
         async handleSaveOpinion(){
@@ -1265,11 +1284,9 @@ export default {
                     message.info("修改成功");
                 }else{
                     message.error("保存意见失败");
-                    console.log(response.data);
                 }
             } catch (error) {
                 message.error("保存总体意见失败");
-                console.log(error);
             }
         },
     },
@@ -1378,7 +1395,7 @@ export default {
 }
 .opinion-assistant-btn {
     margin-top: 8px;
-    float: right;
+    float: center;
 }
 .footer-buttons {
     margin-top: 24px;
