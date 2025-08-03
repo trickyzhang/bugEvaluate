@@ -1,7 +1,7 @@
 const config = {
   websocket: {
-    brokerURL: process.env.VUE_APP_WEBSOCKET_URL || 'ws://127.0.0.1:8080/ws',
-    webSocketUrl: process.env.VUE_APP_WEBSOCKET_URL?.replace('ws://', 'http://') || 'http://127.0.0.1:8080/ws'
+    brokerURL: process.env.VUE_APP_WEBSOCKET_URL || 'ws://10.13.1.104/ws',
+    webSocketUrl: process.env.VUE_APP_WEBSOCKET_URL?.replace('ws://', 'http://') || 'http://10.13.1.104:8080/ws'
   },
   
   livekit: {
@@ -9,7 +9,7 @@ const config = {
   },
   
   api: {
-    baseURL: process.env.VUE_APP_API_BASE_URL || 'http://127.0.0.1:8080'
+    baseURL: process.env.VUE_APP_API_BASE_URL || 'http://10.13.1.104:8080'
   }
 };
 

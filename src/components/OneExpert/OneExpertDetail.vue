@@ -546,7 +546,7 @@ export default {
                 ],
                 adjustedReason: this.explainabilityParams.modificationReason
             };
-
+            console.log(payload.metricList);
             await this.updateExplainability(payload, true);
         },
         handleExplainabilityCancel() {
@@ -580,9 +580,13 @@ export default {
 
                 const response = await axios.post('http://10.13.1.104:8002/api/chat/analyze-eval', llmPayload);
 
-                if (!response.data.answer) {
-                    const llmResult = response.data.answer;
-                    
+                if (response.data.answer!=null) {
+                    const text = response.data.answer;
+                    const cleanJSON = text
+                        .replace(/```json/g, '')   
+                        .replace(/```/g, '')       
+                        .trim(); 
+                    const llmResult = JSON.parse(cleanJSON);
                     const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
                     const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
                     const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
@@ -591,7 +595,7 @@ export default {
                         message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
                         return;
                     }
-                    
+
                     const updatePayload = {
                         evalId: this.$route.query.id,
                         evalExpert: this.$store.getters['auth/userId'], 
@@ -646,10 +650,8 @@ export default {
                 };
 
                 const response = await axios.post('http://10.13.1.104:8002/api/chat/overall-eval', llmPayload);
-                if(!response.data.answer){
-                    const startMarker = "总体评估意见";
-                    const startIndex = response.data.answer.indexOf(startMarker);
-                    const answer = response.data.answer.substring(startIndex).trim();
+                if(response.data.answer!=null){
+                    const answer = response.data.answer.replace(/\n\s*\n/g, '\n');
                     this.form.overallOpinion = answer;
                     message.success('大模型已生成评估意见，请确认后保存。');
                     await this.handleSaveOpinion();
@@ -669,7 +671,6 @@ export default {
             try {
                 const response = await api.put("/api/metric-eval", payload);
                 if (response.data.succeed) {
-                    // 请求成功后，用修改的值更新前端页面显示
                     const rateMap = payload.metricList.reduce((acc, item) => {
                         acc[item.metricCode] = item.adjustedAnalysisRate;
                         return acc;
@@ -684,7 +685,8 @@ export default {
                         this.explainabilityModalVisible = false; // 如果是弹窗触发的，关闭弹窗
                     }
                 } else {
-                    message.error('保存失败: ' + (response.data.message || '未知错误'));
+                    message.error('保存失败');
+                    console.log(response.data)
                 }
             } catch (error) {
                 console.error("保存可解释性分析结果失败:", error);

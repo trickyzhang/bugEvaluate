@@ -165,7 +165,7 @@ export default {
           temperature: 0,
           top_p: 0,
           max_tokens: 0,
-          search_top_k: 0
+          search_top_k: 1
         },
     };
   },
@@ -176,6 +176,7 @@ export default {
   },
   created() {
     this.fetchChatHistory();
+    this.fetchParameters();
   },
   watch: {
     currentMessages() {
@@ -348,10 +349,25 @@ export default {
       this.isLoading = true;
 
       try {
+        // 1. 获取当前对话的所有消息记录
+        const allCurrentMessages = this.allMessages[this.currentChatId] || [];
+
+        // 2. 提取除最后一个消息（即当前用户提问）外的所有历史消息
+        const historySource = allCurrentMessages.slice(0, -1);
+
+        // 3. 从历史消息中截取最后三轮对话作为 chat_history
+        const chat_history = historySource.slice(-6).map(msg => ({
+            role: msg.role,
+            content: msg.rawContent || msg.content // 优先使用未经处理的原始内容
+        }));
+
+        console.log(chat_history);
+        console.log(this.params);
 
         const response = await axios.post(AI_GENERATION_API_URL, {
           session_id: String(this.currentChatId),
           question: userMessage.content,
+          chat_history: chat_history, 
           params: this.params
         });
 
@@ -359,7 +375,7 @@ export default {
 
         const assistantReply = response.data.answer;
         if (!assistantReply) {
-             throw new Error("API返回格式不正确,未找到'answer'字段");
+            throw new Error("API返回格式不正确,未找到'answer'字段");
         }
 
         const assistantMessage = {
@@ -370,47 +386,42 @@ export default {
         };
         this.allMessages[this.currentChatId].push(assistantMessage);
 
-        // Frontend streaming effect
         this.streamResponse(assistantReply, this.currentChatId, assistantMessage.id, () => {
-             // Step 2: Once streaming is complete, save the turn to our backend
-             this.saveTurn(userMessage, assistantMessage);
-
-             // Step 3: If it was the first message, update the chat title
-             if (isFirstMessage) {
-                 const newTitle = userMessage.content.substring(0, 20);
-                 this.updateChatTitle(this.currentChatId, newTitle);
-             }
+            this.saveTurn(userMessage, assistantMessage);
+            if (isFirstMessage) {
+                const newTitle = userMessage.content.substring(0, 20);
+                this.updateChatTitle(this.currentChatId, newTitle);
+            }
         });
 
       } catch (error) {
         console.error("API请求失败:", error);
         message.error("消息发送失败，请检查网络或联系管理员。");
         this.isLoading = false;
-        // Remove the user message that failed to send
         this.allMessages[this.currentChatId].pop();
       }
     },
 
-    streamResponse(text, chatId, messageId, onCompleteCallback) {
-        this.isStreaming = true;
-        let currentIndex = 0;
-        const targetChat = this.allMessages[chatId];
-        if (!targetChat) { this.isStreaming = false; return; }
-        const messageToUpdate = targetChat.find(m => m.id === messageId);
-        if (!messageToUpdate) { this.isStreaming = false; return; }
+        streamResponse(text, chatId, messageId, onCompleteCallback) {
+            this.isStreaming = true;
+            let currentIndex = 0;
+            const targetChat = this.allMessages[chatId];
+            if (!targetChat) { this.isStreaming = false; return; }
+            const messageToUpdate = targetChat.find(m => m.id === messageId);
+            if (!messageToUpdate) { this.isStreaming = false; return; }
 
-        const intervalId = setInterval(() => {
-            if (currentIndex < text.length) {
-                messageToUpdate.content += text[currentIndex];
-                currentIndex++;
-            } else {
-                clearInterval(intervalId);
-                this.isStreaming = false;
-                if(onCompleteCallback) {
-                    onCompleteCallback(); // Execute callback when streaming is done
+            const intervalId = setInterval(() => {
+                if (currentIndex < text.length) {
+                    messageToUpdate.content += text[currentIndex];
+                    currentIndex++;
+                } else {
+                    clearInterval(intervalId);
+                    this.isStreaming = false;
+                    if(onCompleteCallback) {
+                        onCompleteCallback(); // Execute callback when streaming is done
+                    }
                 }
-            }
-        }, 25);
+            }, 25);
     },
 
     loadVulnerabilityTemplate() {

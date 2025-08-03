@@ -353,6 +353,7 @@ import { Client } from '@stomp/stompjs';
 import { Room, RoomEvent } from 'livekit-client';
 import config from '@/config';
 import VoiceTestModal from './VoiceTestModal.vue';
+import axios from 'axios';
 
 export default {
     name: 'VulnerabilityAssessmentDetail', 
@@ -795,14 +796,15 @@ export default {
                         autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft }
                     }
                 };
-                console.log(llmPayload);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                const response = {
-                    data: { succeed: true, data: { overallValue: '严重', exposure: '一般', risk: '轻微' } }
-                };
+                const response = await axios.post('http://10.13.1.104:8002/api/chat/analyze-eval', llmPayload);
 
-                if (response.data.succeed) {
-                    const llmResult = response.data.data;
+                if (response.data.answer!=null) {
+                    const text = response.data.answer;
+                    const cleanJSON = text
+                        .replace(/```json/g, '')   
+                        .replace(/```/g, '')       
+                        .trim(); 
+                    const llmResult = JSON.parse(cleanJSON);
                     const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
                     const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
                     const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
@@ -846,17 +848,12 @@ export default {
                         explainabilityResult: { description: "自动化评估可解释性分析结果", data: this.form.explain }
                     }
                 };
-                console.log(llmPayload);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                const mockText = `基于对 ${this.localStore.vulnInfo.cveId} 的综合分析，该漏洞的价值被评定为“${this.form.explain.overallValue}”。考虑到其暴露度为“${this.form.explain.exposure}”且自动化评估风险为“${this.form.explain.risk}”，建议立即采取缓解措施。`;
-                const response = { data: { succeed: true, data: mockText } };
-                
-                if (response.data.succeed) {
-                    this.form.overallOpinion = response.data.data;
+                const response = await axios.post('http://10.13.1.104:8002/api/chat/overall-eval', llmPayload);
+                if(response.data.answer!=null){
+                    const answer = response.data.answer.replace(/\n\s*\n/g, '\n');
+                    this.form.overallOpinion = answer;
                     message.success('大模型已生成评估意见，请确认后保存。');
                     await this.handleSaveOpinion();
-                } else {
-                    message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
                 }
             } catch (error) {
                 console.error("大模型辅助生成意见失败:", error);

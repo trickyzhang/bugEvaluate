@@ -6,42 +6,42 @@
           <a-form-model-item label="Temperature">
             <a-row>
               <a-col :span="18">
-                <a-slider v-model="form.temperature" :min="0" :max="1" :step="0.01" />
+                <a-slider v-model="form.temperature" :min="0.1" :max="2.0" :step="0.01" />
               </a-col>
               <a-col :span="4">
-                <a-input-number v-model="form.temperature" :min="0" :max="1" :step="0.01" style="margin-left: 16px" />
+                <a-input-number v-model="form.temperature" :min="0.1" :max="2.0" :step="0.02" style="margin-left: 16px" />
               </a-col>
             </a-row>
             <div class="form-item-extra">
-              控制生成文本的随机性。值越高，输出越随机、越有创造性 (如 0.7)；值越低，输出越确定、越保守 (如 0.2)。
+              控制生成文本的随机性。值越高，输出越随机、越有创造性 (如 0.7)；值越低，输出越确定、越保守 (如 0.2)。范围在[0.1,2.0]
             </div>
           </a-form-model-item>
   
           <a-form-model-item label="Top P">
              <a-row>
               <a-col :span="18">
-                <a-slider v-model="form.top_p" :min="0" :max="1" :step="0.01" />
+                <a-slider v-model="form.top_p" :min="0.1" :max="1.0" :step="0.01" />
               </a-col>
               <a-col :span="4">
-                <a-input-number v-model="form.top_p" :min="0" :max="1" :step="0.01" style="margin-left: 16px" />
+                <a-input-number v-model="form.top_p" :min="0.1" :max="1.0" :step="0.01" style="margin-left: 16px" />
               </a-col>
             </a-row>
             <div class="form-item-extra">
-              控制生成文本的多样性。从概率最高的词开始，累加其概率，直到总和达到 top_p。模型仅从这部分词中选择 (如 0.9)。
+              控制生成文本的多样性。从概率最高的词开始，累加其概率，直到总和达到 top_p。模型仅从这部分词中选择 (如 0.9)。范围在[0.1,2.0]
             </div>
           </a-form-model-item>
   
           <a-form-model-item label="Max Tokens">
             <a-input-number v-model="form.max_tokens" :min="1" :max="4096" :step="1" style="width: 100%" />
             <div class="form-item-extra">
-              单次请求中,模型生成的最大token数量。1个汉字约等于2个token。
+              单次请求中,模型生成的最大token数量。1个汉字约等于2个token。最大为4096，正整数
             </div>
           </a-form-model-item>
   
           <a-form-model-item label="Search Top K">
-            <a-input-number v-model="form.search_top_k" :min="1" :max="10" :step="1" style="width: 100%" />
+            <a-input-number v-model="form.search_top_k" :min="1" :max="5" :step="1" style="width: 100%" />
              <div class="form-item-extra">
-              在进行知识库或向量搜索时,返回最相关的K个结果。
+              在进行知识库或向量搜索时,返回最相关的K个结果。范围为[1,5]
             </div>
           </a-form-model-item>
   
