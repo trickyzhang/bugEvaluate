@@ -614,12 +614,42 @@ export default {
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
                         this.localStore.autoSoft = [ ...data.dimVOList ]; // 本地存储
                         data.dimVOList.forEach(item => {
-                            switch (item.dimensionCode) {
-                                case '漏洞价值': this.form.autoSoft.value = item.originalEvalValue; break;
-                                case '漏洞武器': this.form.autoSoft.weapon = item.originalEvalValue; break;
-                                case '漏洞服务': this.form.autoSoft.service = item.originalEvalValue; break;
-                                case '漏洞可利用性': this.form.autoSoft.exploitability = item.originalEvalValue; break;
+                            if(item.analysisResult) {
+                                this.form.autoSoftAnalysis[item.dimensionCode] = item.analysisResult;
                             }
+                            if(item.isisAdjusted == 0){
+                                switch (item.dimensionCode) {
+                                case '漏洞价值':
+                                    this.form.autoSoft.value = item.originalEvalValue;
+                                    break;
+                                case '漏洞武器':
+                                    this.form.autoSoft.weapon = item.originalEvalValue;
+                                    break;
+                                case '漏洞服务':
+                                    this.form.autoSoft.service = item.originalEvalValue;
+                                    break;
+                                case '漏洞可利用性':
+                                    this.form.autoSoft.exploitability = item.originalEvalValue;
+                                    break;
+                                }
+                            }else{
+                                switch (item.dimensionCode) {
+                                case '漏洞价值':
+                                    this.form.autoSoft.value = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞武器':
+                                    this.form.autoSoft.weapon = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞服务':
+                                    this.form.autoSoft.service = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞可利用性':
+                                    this.form.autoSoft.exploitability = item.adjustedEvalValue;
+                                    break;
+                                }
+                            }
+                            
+                            
                         });
                     }
                     
@@ -631,10 +661,30 @@ export default {
                         }));
 
                         data.metricVOList.forEach(item => {
-                            switch (item.metricCode) {
-                                case '漏洞价值': this.form.explain.overallValue = item.originalAnalysisRate; break;
-                                case '漏洞暴露度': this.form.explain.exposure = item.originalAnalysisRate; break;
-                                case '漏洞风险': this.form.explain.risk = item.originalAnalysisRate; break;
+                            if(item.isisAdjusted == 0){
+                                switch (item.metricCode) {
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.originalAnalysisRate;
+                                    break;
+                                }
+                            }else{
+                                switch (item.metricCode) {
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.adjustedAnalysisRate;
+                                    break;
+                                }
                             }
                         });
                     }

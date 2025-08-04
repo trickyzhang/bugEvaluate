@@ -474,7 +474,8 @@ export default {
                             if(item.analysisResult) {
                                 this.form.autoSoftAnalysis[item.dimensionCode] = item.analysisResult;
                             }
-                            switch (item.dimensionCode) {
+                            if(item.isisAdjusted == 0){
+                                switch (item.dimensionCode) {
                                 case '漏洞价值':
                                     this.form.autoSoft.value = item.originalEvalValue;
                                     break;
@@ -487,7 +488,25 @@ export default {
                                 case '漏洞可利用性':
                                     this.form.autoSoft.exploitability = item.originalEvalValue;
                                     break;
+                                }
+                            }else{
+                                switch (item.dimensionCode) {
+                                case '漏洞价值':
+                                    this.form.autoSoft.value = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞武器':
+                                    this.form.autoSoft.weapon = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞服务':
+                                    this.form.autoSoft.service = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞可利用性':
+                                    this.form.autoSoft.exploitability = item.adjustedEvalValue;
+                                    break;
+                                }
                             }
+                            
+                            
                         });
                     }
 
@@ -498,7 +517,8 @@ export default {
                         }));
 
                         data.metricVOList.forEach(item => {
-                            switch (item.metricCode) {
+                            if(item.isisAdjusted == 0){
+                                switch (item.metricCode) {
                                 case '漏洞价值': 
                                     this.form.explain.overallValue = item.originalAnalysisRate;
                                     break;
@@ -508,6 +528,19 @@ export default {
                                 case '漏洞风险':
                                     this.form.explain.risk = item.originalAnalysisRate;
                                     break;
+                                }
+                            }else{
+                                switch (item.metricCode) {
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.adjustedAnalysisRate;
+                                    break;
+                                }
                             }
                         });
                     }
@@ -519,7 +552,8 @@ export default {
 
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
-                    message.error('获取漏洞详情失败: ' + (response.data.message || '未知错误'));
+                    message.error('获取漏洞详情失败');
+                    console.log(response.data);
                 }
             } catch (error) {
                 console.error("获取详情失败:", error);
@@ -647,7 +681,6 @@ export default {
                     }
 
                     this.autoExplainAnalysis = formattedAnalysis;
-                    // [FIX] End
                     
                     message.success("大模型已生成分析结果，请确认后保存。");
                 } else {
