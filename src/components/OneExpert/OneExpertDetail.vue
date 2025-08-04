@@ -667,10 +667,10 @@ export default {
                     };
 
                     const keyMapping = {
-                        "漏洞价值": "漏洞价值评测算法可解释分析",
-                        "漏洞武器": "漏洞武器评测算法可解释性分析",
-                        "漏洞服务": "漏洞服务评估算法可解释性分析",
-                        "漏洞可利用性": "漏洞可利用性算法可解释性分析"
+                        "漏洞价值": "VULN_VALUE",
+                        "漏洞武器": "VULN_WEAPON",
+                        "漏洞服务": "VULN_SERVICE",
+                        "漏洞可利用性": "VULN_EXPLOIT"
                     };
 
                     for (const shortKey in keyMapping) {
