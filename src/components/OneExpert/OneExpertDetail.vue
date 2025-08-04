@@ -101,10 +101,12 @@
                     </a-form>
                      <div style="text-align: center; margin-top: 8px;">
                         <a-button type="primary" @click="showAlgorithmModal">编辑算法</a-button>
+                        <a-button> 算法描述 </a-button>
+                        <a-button> 自动化可解释性分析 </a-button>
                     </div>
                 </a-card>
 
-                <a-card title="自动化评估可解释性分析结果" :bordered="false" class="card-section">
+                <a-card title="专家评估结果" :bordered="false" class="card-section">
                     <a-form>
                         <a-row :gutter="16">
                             <a-col :span="12">
@@ -415,7 +417,7 @@ export default {
                         });
                     }
 
-                    // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
+                    // 4. 映射 "专家评估结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
                         this.localStore.metricInfo = data.metricVOList.map(item => ({ 
                             metricId: item.metricId,
@@ -643,7 +645,7 @@ export default {
                             data: this.localStore.autoSoft,
                         },
                         explainabilityResult: {
-                            description: "自动化评估可解释性分析结果",
+                            description: "专家评估结果",
                             data: this.form.explain,
                         }
                     }

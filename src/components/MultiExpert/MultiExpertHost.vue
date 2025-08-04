@@ -516,7 +516,7 @@ export default {
 
             this.stompClient = new Client({
                 brokerURL: config.websocket.brokerURL, 
-                webSocketFactory: () => new SockJS(config.websocket.webSocketUrl),
+                webSocketFactory: () => new SockJS(config.websocket.webSocketUrl, null, { transports: ['websocket'] }),
                 connectHeaders: { Authorization: authToken },
                 reconnectDelay: 5000,
             });
