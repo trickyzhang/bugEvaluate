@@ -97,12 +97,17 @@
                                      <span class="ant-form-text">{{ form.autoSoft.exploitability || '-' }}</span>
                                 </a-form-item>
                             </a-col>
+                            <a-col :span="12">
+                                <a-form-item label="自动化评估结果" :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }">
+                                     <span class="ant-form-text">{{ form.autoSoft.valueResult || '-' }}</span>
+                                </a-form-item>
+                            </a-col>
                         </a-row>
                     </a-form>
-                     <div style="text-align: center; margin-top: 8px;">
+                     <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 8px;">
                         <a-button type="primary" @click="showAlgorithmModal">编辑算法</a-button>
-                        <a-button> 算法描述 </a-button>
-                        <a-button> 自动化可解释性分析 </a-button>
+                        <a-button @click="showAlgoDescriptionModal"> 算法描述 </a-button>
+                        <a-button @click="showAutoExplainModal" > 自动化可解释性分析 </a-button>
                     </div>
                 </a-card>
 
@@ -177,7 +182,7 @@
                                 </a-select>
                             </a-form-item>
                             <a-form-item label="其他需求">
-                                <a-input v-model="retrieval.other" placeholder="请输入其他需求, 如: 请帮我以脑图的形式输出检索结果" />
+                                <a-input v-model="retrieval.other" placeholder="请输入其他需求, 仅支持大模型脑图" />
                             </a-form-item>
                         </div>
 
@@ -266,11 +271,59 @@
                 </a-form-item>
             </a-form>
         </a-modal>
+        
+        <a-modal
+            title="算法描述"
+            :visible="algoDescModalVisible"
+            @cancel="handleAlgoDescCancel"
+            :footer="null"
+            width="60%"
+        >
+            <a-spin :spinning="algoDescLoading">
+                <a-collapse accordion>
+                    <a-collapse-panel v-for="(algo, index) in localStore.algoDescriptions" :key="index" :header="algo.algoDimension">
+                        <p style="white-space: pre-wrap;">{{ algo.detail }}</p>
+                    </a-collapse-panel>
+                </a-collapse>
+                <a-empty v-if="!localStore.algoDescriptions.length && !algoDescLoading" description="暂无算法描述信息" />
+            </a-spin>
+        </a-modal>
+
+        <a-modal
+            title="自动化可解释性分析"
+            :visible="autoExplainModalVisible"
+            @cancel="handleAutoExplainCancel"
+            width="60%"
+            :footer="null"
+        >
+            <a-form layout="vertical">
+                <a-form-item label="漏洞价值分析">
+                    <a-textarea v-model="autoExplainAnalysis['漏洞价值']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
+                </a-form-item>
+                 <a-form-item label="漏洞武器分析">
+                    <a-textarea v-model="autoExplainAnalysis['漏洞武器']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
+                </a-form-item>
+                 <a-form-item label="漏洞服务分析">
+                    <a-textarea v-model="autoExplainAnalysis['漏洞服务']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
+                </a-form-item>
+                 <a-form-item label="漏洞可利用性分析">
+                    <a-textarea v-model="autoExplainAnalysis['漏洞可利用性']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
+                </a-form-item>
+            </a-form>
+            <div class="modal-footer" style="text-align: right; margin-top: 16px;">
+                <a-button @click="generateAutoExplainability" :loading="autoExplainLLMLoading" style="margin-right: 8px;">
+                    大模型辅助生成
+                </a-button>
+                <a-button type="primary" @click="saveAutoExplainability" :loading="saveAutoExplainLoading">
+                    保存结果
+                </a-button>
+            </div>
+        </a-modal>
     </div>
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Spin, Collapse, Empty } from 'ant-design-vue';
 
 import api from '@/utils/axios';
 import axios from 'axios';
@@ -294,6 +347,10 @@ export default {
         'a-range-picker': DatePicker.RangePicker,
         'a-textarea': Input.TextArea,
         'a-modal': Modal,
+        'a-spin': Spin,
+        'a-collapse': Collapse,
+        'a-collapse-panel': Collapse.Panel,
+        'a-empty': Empty,
     },
     data() {
         return {
@@ -317,6 +374,12 @@ export default {
                     service: '',
                     exploitability: '',
                 },
+                autoSoftAnalysis: {
+                    '漏洞价值': '',
+                    '漏洞武器': '',
+                    '漏洞服务': '',
+                    '漏洞可利用性': '',
+                },
                 explain: {
                     overallValue: '',
                     exposure: '',
@@ -329,7 +392,8 @@ export default {
                 threatIntel: null,
                 religionInfo: null,
                 autoSoft: null,
-                metricInfo: [], 
+                metricInfo: [],
+                algoDescriptions: [], 
             },
             retrieval: {
                 sources: [],
@@ -339,7 +403,6 @@ export default {
                 other: '',
                 resultView: 'table',
             },
-            // 算法弹窗
             algorithmModalVisible: false,
             modalLoading: false,
             algorithmParams: {
@@ -349,7 +412,6 @@ export default {
                 paramD: '默认值4',
                 modificationReason: '', 
             },
-            // 可解释性弹窗
             explainabilityModalVisible: false,
             explainabilityModalLoading: false,
             explainLLMLoading: false, 
@@ -361,10 +423,22 @@ export default {
                 modificationReason: '',
             },
             evalReportTitle: '',
+            algoDescModalVisible: false,
+            algoDescLoading: false,
+            autoExplainModalVisible: false,
+            autoExplainLLMLoading: false,
+            saveAutoExplainLoading: false,
+            autoExplainAnalysis: {
+                '漏洞价值': '',
+                '漏洞武器': '',
+                '漏洞服务': '',
+                '漏洞可利用性': '',
+            },
         }
     },
     created() {
         this.fetchDetails();
+        this.fetchAlgoDescriptions(); 
     },
     methods: {
         async fetchDetails() {
@@ -378,7 +452,6 @@ export default {
                 if (response.data.succeed) {
                     const data = response.data.data;
 
-                    // 1. 映射 "漏洞基本信息" 并本地存储
                     if (data.vulnInfo) {
                         this.localStore.vulnInfo = { ...data.vulnInfo }; 
                         this.form.basic.cveID = data.vulnInfo.cveId;
@@ -388,7 +461,6 @@ export default {
                         this.form.basic.cveDescription = data.vulnInfo.cveDescription;
                     }
 
-                    // 2. 映射 "威胁情报来源" 并本地存储
                     if (data.threatIntel) {
                         this.localStore.threatIntel = { ...data.threatIntel }; 
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
@@ -396,10 +468,12 @@ export default {
                         this.form.threatIntelligence.field3 = data.threatIntel.field3; 
                     }
 
-                    // 3. 映射 "自动化软件漏洞评估结果" 并本地存储
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
                         this.localStore.autoSoft = [ ...data.dimVOList ]; 
                         data.dimVOList.forEach(item => {
+                            if(item.analysisResult) {
+                                this.form.autoSoftAnalysis[item.dimensionCode] = item.analysisResult;
+                            }
                             switch (item.dimensionCode) {
                                 case '漏洞价值':
                                     this.form.autoSoft.value = item.originalEvalValue;
@@ -417,7 +491,6 @@ export default {
                         });
                     }
 
-                    // 4. 映射 "专家评估结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
                         this.localStore.metricInfo = data.metricVOList.map(item => ({ 
                             metricId: item.metricId,
@@ -439,11 +512,9 @@ export default {
                         });
                     }
                     
-                    // 5. 映射 "总体评估意见"
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
                     
-                    // 6. 独立获取漏洞地域信息
                     this.fetchReligionData(id);
 
                     message.success(`成功加载漏洞 ${id} 的详情。`);
@@ -455,20 +526,18 @@ export default {
                 message.error('网络请求失败，请检查网络或联系管理员。');
             }
         },
-        // 获取漏洞地域信息
         async fetchReligionData(id) {
             try {
                 const response = await api.get(`/api/vuln-location/${id}`); 
                 if (response.data.succeed) {
                     const religionData = response.data.data;
-                    this.localStore.religionInfo = { ...religionData }; // 本地存储
+                    this.localStore.religionInfo = { ...religionData };
                     this.form.religion.field1 = religionData.field1;
                     this.form.religion.field2 = religionData.field2;
                 } else {
                      message.error('获取漏洞地域信息失败。');
                 }
             } catch (error) {
-                 // 模拟成功返回，因为API不存在
                 console.warn("无法从/api/vuln-location获取数据，将使用模拟数据。");
                 const mockReligionData = { field1: '模拟地域A', field2: '模拟地域B' };
                 this.localStore.religionInfo = { ...mockReligionData };
@@ -476,12 +545,27 @@ export default {
                 this.form.religion.field2 = mockReligionData.field2;
             }
         },
+        async fetchAlgoDescriptions() {
+            this.algoDescLoading = true;
+            try {
+                const response = await api.get('/api/eval-algo/list');
+                if (response.data.succeed) {
+                    this.localStore.algoDescriptions = response.data.data;
+                } else {
+                    message.error("获取算法描述失败: " + response.data.message);
+                }
+            } catch (error) {
+                console.error("获取算法描述接口失败:", error);
+                message.error("获取算法描述接口请求失败");
+            } finally {
+                this.algoDescLoading = false;
+            }
+        },
         returnList() {
             this.$router.push('/oneexpert');
         },
-        // 算法弹窗
         showAlgorithmModal() {
-            this.algorithmParams.modificationReason = ''; // 清空理由
+            this.algorithmParams.modificationReason = '';
             this.algorithmModalVisible = true;
         },
         handleAlgorithmSave() {
@@ -505,8 +589,108 @@ export default {
         handleAlgorithmCancel() {
             this.algorithmModalVisible = false;
         },
+        showAlgoDescriptionModal() {
+            this.algoDescModalVisible = true;
+        },
+        handleAlgoDescCancel() {
+            this.algoDescModalVisible = false;
+        },
+        showAutoExplainModal() {
+            this.autoExplainAnalysis = { ...this.form.autoSoftAnalysis };
+            this.autoExplainModalVisible = true;
+        },
+        handleAutoExplainCancel() {
+            this.autoExplainModalVisible = false;
+        },
+        async generateAutoExplainability() {
+            this.autoExplainLLMLoading = true;
+            try {
+                if (!this.localStore.algoDescriptions || this.localStore.algoDescriptions.length === 0) {
+                    await this.fetchAlgoDescriptions();
+                }
+                const llmPayload = {
+                    context: {
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo, },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel, },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo, },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft, },
+                        algoAnalysis: { description: "四种评估算法解释数据", data: this.localStore.algoDescriptions, }
+                    }
+                };
+                const response = await axios.post('http://10.13.1.104:8002/api/chat/eval_algo_analysis', llmPayload);
+                if (response.data && response.data.answer) {
+                    const text = response.data.answer;
+                    const cleanJSON = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const llmResult = JSON.parse(cleanJSON);
 
-        // 可解释性分析结果弹窗
+                    console.log(llmResult);
+
+                    const formattedAnalysis = {
+                        '漏洞价值': '',
+                        '漏洞武器': '',
+                        '漏洞服务': '',
+                        '漏洞可利用性': '',
+                    };
+
+                    const keyMapping = {
+                        "漏洞价值": "漏洞价值评测算法可解释分析",
+                        "漏洞武器": "漏洞武器评测算法可解释性分析",
+                        "漏洞服务": "漏洞服务评估算法可解释性分析",
+                        "漏洞可利用性": "漏洞可利用性算法可解释性分析"
+                    };
+
+                    for (const shortKey in keyMapping) {
+                        const longKey = keyMapping[shortKey];
+                        if (llmResult[longKey] && llmResult[longKey]['分析结果']) {
+                            formattedAnalysis[shortKey] = llmResult[longKey]['分析结果'];
+                        }
+                    }
+
+                    this.autoExplainAnalysis = formattedAnalysis;
+                    // [FIX] End
+                    
+                    message.success("大模型已生成分析结果，请确认后保存。");
+                } else {
+                    message.error("大模型未能生成有效的分析结果");
+                }
+            } catch (error) {
+                console.error("自动化可解释性分析生成失败:", error);
+                message.error('大模型服务请求失败或返回格式错误。');
+            } finally {
+                this.autoExplainLLMLoading = false;
+            }
+        },
+        async saveAutoExplainability() {
+            this.saveAutoExplainLoading = true;
+            try {
+                const dimensionList = this.localStore.autoSoft.map(dim => ({
+                    dimensionId: dim.dimensionId,
+                    dimensionCode: dim.dimensionCode,
+                    analysisResult: this.autoExplainAnalysis[dim.dimensionCode] || ''
+                }));
+
+                const payload = {
+                    evalId: this.$route.query.id,
+                    evalExpert: this.$store.getters['auth/userId'],
+                    dimensionList: dimensionList,
+                };
+
+                const response = await api.put('api/dimension-eval/analysis-res', payload);
+
+                if (response.data.succeed) {
+                    message.success('自动化分析结果保存成功！');
+                    this.form.autoSoftAnalysis = { ...this.autoExplainAnalysis };
+                    this.autoExplainModalVisible = false;
+                } else {
+                    message.error('保存失败');
+                }
+            } catch (error) {
+                console.error("保存自动化分析结果失败:", error);
+                message.error('网络请求失败，请检查或联系管理员。');
+            } finally {
+                this.saveAutoExplainLoading = false;
+            }
+        },
         showExplainabilityModal() {
             this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
             this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
@@ -515,7 +699,6 @@ export default {
             this.explainabilityModalVisible = true;
         },
         async handleExplainabilitySave() {
-            // 前端表单校验
             if (!this.explainabilityParams.modificationReason) {
                 message.warn('请输入修改理由');
                 return;
@@ -527,7 +710,6 @@ export default {
             
             this.explainabilityModalLoading = true;
 
-            // 从存储的 metricInfo 中查找各项的 ID
             const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
             const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
             const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
@@ -548,35 +730,20 @@ export default {
                 ],
                 adjustedReason: this.explainabilityParams.modificationReason
             };
-            console.log(payload.metricList);
             await this.updateExplainability(payload, true);
         },
         handleExplainabilityCancel() {
             this.explainabilityModalVisible = false;
         },
-        // 大模型辅助生成可解释性结果
         async generateExplainabilityWithLLM() {
             this.explainLLMLoading = true;
             try {
-                // 组装发送给大模型的数据
                 const llmPayload = {
                     context: {
-                        basicInfo: {
-                            description: "漏洞基本信息",
-                            data: this.localStore.vulnInfo,
-                        },
-                        threatIntel: {
-                            description: "威胁情报来源",
-                            data: this.localStore.threatIntel,
-                        },
-                        religionInfo: {
-                            description: "漏洞地域信息",
-                            data: this.localStore.religionInfo,
-                        },
-                        autoSoftResult: {
-                            description: "自动化软件漏洞评估结果",
-                            data: this.localStore.autoSoft,
-                        }
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo, },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel, },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo, },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft, }
                     }
                 };
 
@@ -584,10 +751,7 @@ export default {
 
                 if (response.data.answer!=null) {
                     const text = response.data.answer;
-                    const cleanJSON = text
-                        .replace(/```json/g, '')   
-                        .replace(/```/g, '')       
-                        .trim(); 
+                    const cleanJSON = text.replace(/```json/g, '').replace(/```/g, '').trim(); 
                     const llmResult = JSON.parse(cleanJSON);
                     const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
                     const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
@@ -608,13 +772,10 @@ export default {
                         ],
                         adjustedReason: "由大模型辅助生成"
                     };
-
                     await this.updateExplainability(updatePayload, false);
-
                 } else {
                      message.error("大模型辅助生成失败");
                 }
-
             } catch(error) {
                 console.error("大模型辅助生成失败:", error);
                 message.error('大模型服务请求失败，请检查网络或联系管理员。');
@@ -622,32 +783,16 @@ export default {
                 this.explainLLMLoading = false;
             }
         },
-        // 大模型辅助生成总体评估意见
         async generateOpinionWithLLM() {
             this.opinionLLMLoading = true;
             try {
                  const llmPayload = {
                     context: {
-                        basicInfo: {
-                            description: "漏洞基本信息",
-                            data: this.localStore.vulnInfo,
-                        },
-                        threatIntel: {
-                            description: "威胁情报来源",
-                            data: this.localStore.threatIntel,
-                        },
-                        religionInfo: {
-                            description: "漏洞地域信息",
-                            data: this.localStore.religionInfo,
-                        },
-                        autoSoftResult: {
-                            description: "自动化软件漏洞评估结果",
-                            data: this.localStore.autoSoft,
-                        },
-                        explainabilityResult: {
-                            description: "专家评估结果",
-                            data: this.form.explain,
-                        }
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo, },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel, },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo, },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft, },
+                        explainabilityResult: { description: "专家评估结果", data: this.form.explain, }
                     }
                 };
 
@@ -658,7 +803,6 @@ export default {
                     message.success('大模型已生成评估意见，请确认后保存。');
                     await this.handleSaveOpinion();
                 }
-                
             } catch (error) {
                 console.error("大模型辅助生成意见失败:", error);
                 message.error('大模型服务请求失败，请检查网络或联系管理员。');
@@ -666,7 +810,6 @@ export default {
                 this.opinionLLMLoading = false;
             }
         },
-        // 重构：将可解释性结果的更新逻辑提取出来
         async updateExplainability(payload, fromModal) {
             const loadingState = fromModal ? 'explainabilityModalLoading' : 'explainLLMLoading';
             this[loadingState] = true;
@@ -684,7 +827,7 @@ export default {
 
                     message.success('可解释性分析结果已成功更新！');
                     if (fromModal) {
-                        this.explainabilityModalVisible = false; // 如果是弹窗触发的，关闭弹窗
+                        this.explainabilityModalVisible = false;
                     }
                 } else {
                     message.error('保存失败');
@@ -712,7 +855,6 @@ export default {
             }
         },
         async endEval(){
-            //结束评估
             try {
                 const response = await api.put("api/eval/confirm/"+this.$route.query.id);
                 if(response.data.succeed){

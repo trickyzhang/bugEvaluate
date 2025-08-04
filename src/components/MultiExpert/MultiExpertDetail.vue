@@ -98,8 +98,10 @@
                             </a-col>
                         </a-row>
                     </a-form>
-                    <div style="text-align: center; margin-top: 8px;">
+                    <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 8px;">
                         <a-button type="primary" @click="showAlgorithmModal">编辑算法</a-button>
+                        <a-button > 算法描述 </a-button>
+                        <a-button > 自动化可解释性分析 </a-button>
                     </div>
                 </a-card>
 
@@ -205,7 +207,7 @@
                                 </a-select>
                             </a-form-item>
                             <a-form-item label="其他需求">
-                                <a-input v-model="retrieval.other" placeholder="请输入其他需求, 如: 请帮我以脑图的形式输出检索结果" />
+                                <a-input v-model="retrieval.other" placeholder="请输入其他需求, 仅支持大模型脑图" />
                             </a-form-item>
                         </div>
 
