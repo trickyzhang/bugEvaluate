@@ -101,7 +101,7 @@
                     <div style="text-align: center; margin-top: 8px; display: flex; justify-content: center; gap: 8px;">
                         <a-button type="primary" @click="showAlgorithmModal">编辑算法</a-button>
                         <a-button @click="showAlgoDescriptionModal"> 算法描述 </a-button>
-                        <a-button @click="showAutoExplainModal"> 自动化可解释性分析 </a-button>
+                        <a-button @click="showAutoExplainModal" > 自动化可解释性分析 </a-button>
                     </div>
                 </a-card>
 
@@ -358,7 +358,7 @@
                         <p style="white-space: pre-wrap;">{{ algo.detail }}</p>
                     </a-collapse-panel>
                 </a-collapse>
-                <a-empty v-if="!localStore.algoDescriptions || !localStore.algoDescriptions.length && !algoDescLoading" description="暂无算法描述信息" />
+                <a-empty v-if="!localStore.algoDescriptions.length && !algoDescLoading" description="暂无算法描述信息" />
             </a-spin>
         </a-modal>
 
@@ -387,12 +387,11 @@
                 </a-button>
             </div>
         </a-modal>
-
     </div>
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Icon, Spin, Collapse, Empty } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Icon } from 'ant-design-vue';
 import api from '@/utils/axios';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
@@ -409,7 +408,7 @@ export default {
         'a-checkbox': Checkbox, 'a-radio-group': Radio.Group, 'a-radio-button': Radio.Button,
         'a-select': Select, 'a-select-option': Select.Option, 'a-range-picker': DatePicker.RangePicker,
         'a-textarea': Input.TextArea, 'a-modal': Modal, 'a-icon': Icon,
-        VoiceTestModal, 'a-spin': Spin, 'a-collapse': Collapse, 'a-collapse-panel': Collapse.Panel, 'a-empty': Empty,
+        VoiceTestModal,
     },
     data() {
         return {
@@ -432,8 +431,8 @@ export default {
                 threatIntel: null,
                 religionInfo: null,
                 autoSoft: null,
-                metricInfo: [],
-                algoDescriptions: [], 
+                metricInfo: [], 
+                algoDescriptions: [],
             },
             retrieval: {
                 sources: [], dateRange: [], keywords: '',
@@ -443,13 +442,12 @@ export default {
             algorithmModalVisible: false, modalLoading: false,
             algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
             explainabilityModalVisible: false, explainabilityModalLoading: false,
-            explainLLMLoading: false,
-            opinionLLMLoading: false,
+            explainLLMLoading: false, 
+            opinionLLMLoading: false, 
             explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
             livekitRoom: null, isVoiceConnected: false, isMutedBySelf: false,
             voiceTestModalVisible: false,
             evalReportTitle:' ',
-
             algoDescModalVisible: false,
             algoDescLoading: false,
             autoExplainModalVisible: false,
@@ -478,6 +476,7 @@ export default {
         }
     },
     methods: {
+        
         formatTimestamp(timestamp) {
             if (!timestamp) return '';
             return new Date(timestamp).toLocaleString();
@@ -559,6 +558,11 @@ export default {
                 case "LEAVE":
                     message.info(`${msg.userAccount} ${msg.type === 'JOIN' ? '加入了' : '离开了'}会议。`);
                     break;
+                case "NEW_ADMIN":
+                    if(msg.payload && msg.payload.expertId === currentUserId){
+                        message.success('您已被提升为会议管理员，请及时返回列表重新主持会议。', 4);
+                        message.success('您已被提升为会议管理员，请及时返回列表重新主持会议。', 4);
+                    }
             }
         },
         disconnectWebSocket() {
@@ -581,6 +585,7 @@ export default {
                 body: JSON.stringify(joinMessage)
             });
         },
+
         leaveRoom() {
             if (this.stompClient && this.stompClient.active) {
                 const leaveMessage = {
@@ -595,6 +600,7 @@ export default {
                 });
             }
         },
+
         shareData() {
             if (!this.stompClient || !this.stompClient.active) {
                 message.error("无法共享，连接已断开。");
@@ -624,6 +630,7 @@ export default {
             });
             message.success('数据已共享！');
         },
+        
         acceptSharedData() {
             if (this.incomingSharedData && this.incomingSharedData.payload) {
                 this.retrieval = { ...this.retrieval, ...this.incomingSharedData.payload };
@@ -642,67 +649,106 @@ export default {
                 const response = await api.get(`/api/eval/${id}`);
                 if (response.data.succeed) {
                     const data = response.data.data;
+                     // 1. 映射 "漏洞基本信息" 并本地存储
                     if (data.vulnInfo) {
-                        this.localStore.vulnInfo = { ...data.vulnInfo };
+                        this.localStore.vulnInfo = { ...data.vulnInfo }; // 本地存储
                         this.form.basic.cveID = data.vulnInfo.cveId;
                         this.form.basic.cveType = data.vulnInfo.cveType;
                         this.form.basic.softwareType = data.vulnInfo.softwareType;
                         this.form.basic.cveTitle = data.vulnInfo.cveTitle;
                         this.form.basic.cveDescription = data.vulnInfo.cveDescription;
                     }
+                     // 2. 映射 "威胁情报来源" 并本地存储
                     if (data.threatIntel) {
-                        this.localStore.threatIntel = { ...data.threatIntel };
+                        this.localStore.threatIntel = { ...data.threatIntel }; // 本地存储
                         this.form.threatIntelligence.field1 = data.threatIntel.field1;
                         this.form.threatIntelligence.field2 = data.threatIntel.field2;
                         this.form.threatIntelligence.field3 = data.threatIntel.field3;
                     }
+                    // 3. 映射 "自动化软件漏洞评估结果" 并本地存储
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
-                        this.localStore.autoSoft = [ ...data.dimVOList ];
+                        this.localStore.autoSoft = [ ...data.dimVOList ]; // 本地存储
                         data.dimVOList.forEach(item => {
                             if(item.analysisResult) {
                                 this.form.autoSoftAnalysis[item.dimensionCode] = item.analysisResult;
                             }
                             if(item.isisAdjusted == 0){
                                 switch (item.dimensionCode) {
-                                case '漏洞价值': this.form.autoSoft.value = item.originalEvalValue; break;
-                                case '漏洞武器': this.form.autoSoft.weapon = item.originalEvalValue; break;
-                                case '漏洞服务': this.form.autoSoft.service = item.originalEvalValue; break;
-                                case '漏洞可利用性': this.form.autoSoft.exploitability = item.originalEvalValue; break;
+                                case '漏洞价值':
+                                    this.form.autoSoft.value = item.originalEvalValue;
+                                    break;
+                                case '漏洞武器':
+                                    this.form.autoSoft.weapon = item.originalEvalValue;
+                                    break;
+                                case '漏洞服务':
+                                    this.form.autoSoft.service = item.originalEvalValue;
+                                    break;
+                                case '漏洞可利用性':
+                                    this.form.autoSoft.exploitability = item.originalEvalValue;
+                                    break;
                                 }
                             }else{
                                 switch (item.dimensionCode) {
-                                case '漏洞价值': this.form.autoSoft.value = item.adjustedEvalValue; break;
-                                case '漏洞武器': this.form.autoSoft.weapon = item.adjustedEvalValue; break;
-                                case '漏洞服务': this.form.autoSoft.service = item.adjustedEvalValue; break;
-                                case '漏洞可利用性': this.form.autoSoft.exploitability = item.adjustedEvalValue; break;
+                                case '漏洞价值':
+                                    this.form.autoSoft.value = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞武器':
+                                    this.form.autoSoft.weapon = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞服务':
+                                    this.form.autoSoft.service = item.adjustedEvalValue;
+                                    break;
+                                case '漏洞可利用性':
+                                    this.form.autoSoft.exploitability = item.adjustedEvalValue;
+                                    break;
                                 }
                             }
+                            
+                            
                         });
                     }
+                    
+                    // 4. 映射 "自动化评估可解释性分析结果" 并存储原始指标信息
                     if (data.metricVOList && Array.isArray(data.metricVOList)) {
                         this.localStore.metricInfo = data.metricVOList.map(item => ({ 
                             metricId: item.metricId,
                             metricCode: item.metricCode
                         }));
+
                         data.metricVOList.forEach(item => {
                             if(item.isisAdjusted == 0){
                                 switch (item.metricCode) {
-                                case '漏洞价值': this.form.explain.overallValue = item.originalAnalysisRate; break;
-                                case '漏洞暴露度': this.form.explain.exposure = item.originalAnalysisRate; break;
-                                case '漏洞风险': this.form.explain.risk = item.originalAnalysisRate; break;
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.originalAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.originalAnalysisRate;
+                                    break;
                                 }
                             }else{
                                 switch (item.metricCode) {
-                                case '漏洞价值': this.form.explain.overallValue = item.adjustedAnalysisRate; break;
-                                case '漏洞暴露度': this.form.explain.exposure = item.adjustedAnalysisRate; break;
-                                case '漏洞风险': this.form.explain.risk = item.adjustedAnalysisRate; break;
+                                case '漏洞价值': 
+                                    this.form.explain.overallValue = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞暴露度':
+                                    this.form.explain.exposure = item.adjustedAnalysisRate;
+                                    break;
+                                case '漏洞风险':
+                                    this.form.explain.risk = item.adjustedAnalysisRate;
+                                    break;
                                 }
                             }
                         });
                     }
+                    // 5. 映射 "总体评估意见"
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
+                     // 6. 新增：独立获取漏洞地域信息
                     this.fetchReligionData(id);
+
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
                     message.error('获取漏洞详情失败: ' + (response.data.message || '未知错误'));
@@ -731,278 +777,6 @@ export default {
                 this.form.religion.field2 = mockReligionData.field2;
             }
         },
-        async fetchChatHistory(){
-            const meetingId = this.$route.query.meetingId;
-            if(!meetingId){
-                message.error("无法获得会议id");
-                return;
-            }
-            try {
-                const response =await api.get('api/meeting-record/list',{ params:{ meetingId } });
-                if(response.data.succeed){
-                    const data = response.data.data;
-                    this.chatHistory = data.slice().reverse().map(msg =>({ ...msg, user: msg.userAccount, text: msg.msgContent, timestamp: msg.recordCreated }));
-                }else{
-                    message.error("获取消息历史失败",response.data);
-                }
-            } catch (error) {
-                message.error("获取文字聊天历史信息失败");
-                console.log(error);
-            }
-        },
-        returnList() { 
-            this.leaveRoom(); 
-            this.disconnectWebSocket(); 
-            this.$router.push('/multiexpert'); 
-        },
-        handleText() { this.chatModalVisible = true; },
-        handleChatModalCancel() { this.chatModalVisible = false; },
-        async handleSendMessage() {
-            if (!this.newChatMessage.trim() || !this.stompClient || !this.stompClient.active) return;
-            const chatMessage = {
-                meetingId: this.$route.query.meetingId,
-                expertId: this.$store.getters['auth/userId'],
-                userAccount: this.$store.getters['auth/userInfo'].account,
-                type: 'CHAT', payload: this.newChatMessage, timestamp: Date.now()
-            };
-            this.stompClient.publish({
-                destination: '/app/chat',
-                body: JSON.stringify(chatMessage)
-            });
-            this.newChatMessage = '';
-        },
-        showAlgorithmModal() {
-            this.algorithmParams.modificationReason = '';
-            this.algorithmModalVisible = true;
-        },
-        handleAlgorithmSave() {
-            if (!this.algorithmParams.modificationReason) { message.warn('请输入修改理由'); return; }
-            this.modalLoading = true;
-            setTimeout(() => {
-                this.modalLoading = false;
-                this.algorithmModalVisible = false;
-                message.success('参数已更新，评估结果已重新计算！');
-            }, 1500);
-        },
-        handleAlgorithmCancel() { this.algorithmModalVisible = false; },
-        showExplainabilityModal() {
-            this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
-            this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
-            this.explainabilityParams.risk = this.form.explain.risk || undefined;
-            this.explainabilityParams.modificationReason = '';
-            this.explainabilityModalVisible = true;
-        },
-        async handleExplainabilitySave() {
-            if (!this.explainabilityParams.modificationReason) { message.warn('请输入修改理由'); return; }
-            if (!this.explainabilityParams.overallValue || !this.explainabilityParams.exposure || !this.explainabilityParams.risk) { message.warn('请完成所有字段的选择'); return; }
-            this.explainabilityModalLoading = true;
-            const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
-            const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
-            const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
-            if (!valueMetric || !exposureMetric || !riskMetric) {
-                message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
-                this.explainabilityModalLoading = false;
-                return;
-            }
-            const payload = {
-                evalId: this.$route.query.id,
-                evalExpert: this.$store.getters['auth/userId'], 
-                metricList: [
-                    { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.overallValue },
-                    { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.exposure },
-                    { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.risk }
-                ],
-                adjustedReason: this.explainabilityParams.modificationReason
-            };
-            await this.updateExplainability(payload, true);
-        },
-        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
-        async generateExplainabilityWithLLM() {
-            this.explainLLMLoading = true;
-            try {
-                const llmPayload = {
-                    context: {
-                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
-                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
-                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
-                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft }
-                    }
-                };
-                const response = await axios.post('http://10.13.1.104:8002/api/chat/analyze-eval', llmPayload);
-                if (response.data.answer!=null) {
-                    const text = response.data.answer;
-                    const cleanJSON = text.replace(/```json/g, '').replace(/```/g, '').trim(); 
-                    const llmResult = JSON.parse(cleanJSON);
-                    const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
-                    const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
-                    const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
-                    if (!valueMetric || !exposureMetric || !riskMetric) { message.error('无法找到原始指标ID,请刷新页面或联系管理员。'); return; }
-                    const updatePayload = {
-                        evalId: this.$route.query.id,
-                        evalExpert: this.$store.getters['auth/userId'], 
-                        metricList: [
-                            { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: llmResult.overallValue },
-                            { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: llmResult.exposure },
-                            { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: llmResult.risk }
-                        ],
-                        adjustedReason: "由大模型辅助生成"
-                    };
-                    await this.updateExplainability(updatePayload, false);
-                } else { message.error("大模型辅助生成失败: " + (response.data.message || '未知错误')); }
-            } catch(error) {
-                console.error("大模型辅助生成失败:", error);
-                message.error('大模型服务请求失败，请检查网络或联系管理员。');
-            } finally {
-                this.explainLLMLoading = false;
-            }
-        },
-        async generateOpinionWithLLM() {
-            this.opinionLLMLoading = true;
-            try {
-                 const llmPayload = {
-                    context: {
-                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
-                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
-                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
-                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft },
-                        explainabilityResult: { description: "自动化评估可解释性分析结果", data: this.form.explain }
-                    }
-                };
-                const response = await axios.post('http://10.13.1.104:8002/api/chat/overall-eval', llmPayload);
-                if(response.data.answer!=null){
-                    const answer = response.data.answer.replace(/\n\s*\n/g, '\n');
-                    this.form.overallOpinion = answer;
-                    message.success('大模型已生成评估意见，请确认后保存。');
-                    await this.handleSaveOpinion();
-                }
-            } catch (error) {
-                console.error("大模型辅助生成意见失败:", error);
-                message.error('大模型服务请求失败，请检查网络或联系管理员。');
-            } finally {
-                this.opinionLLMLoading = false;
-            }
-        },
-        async updateExplainability(payload, fromModal) {
-            const loadingState = fromModal ? 'explainabilityModalLoading' : 'explainLLMLoading';
-            this[loadingState] = true;
-            try {
-                const response = await api.put("/api/metric-eval", payload);
-                if (response.data.succeed) {
-                    const rateMap = payload.metricList.reduce((acc, item) => {
-                        acc[item.metricCode] = item.adjustedAnalysisRate;
-                        return acc;
-                    }, {});
-                    this.form.explain.overallValue = rateMap['漏洞价值'];
-                    this.form.explain.exposure = rateMap['漏洞暴露度'];
-                    this.form.explain.risk = rateMap['漏洞风险'];
-                    message.success('可解释性分析结果已成功更新！');
-                    if (fromModal) { this.explainabilityModalVisible = false; }
-                } else { message.error('保存失败: ' + (response.data.message || '未知错误')); }
-            } catch (error) {
-                console.error("保存可解释性分析结果失败:", error);
-                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
-            } finally {
-                this[loadingState] = false;
-            }
-        },
-        toggleVoiceConnection() {
-            if (this.isVoiceConnected) { this.disconnectFromVoice(); } 
-            else { this.connectToVoice(); }
-        },
-        async connectToVoice() {
-            if (this.livekitRoom) return;
-            if (this.livekitToken) { this.connectToVoiceWithToken(this.livekitToken); } 
-            else { message.warn("语音服务正在准备中，请稍后再试。"); }
-        },
-        async connectToVoiceWithToken(token) {
-            if (!token) { message.error("获取语音授权失败！"); return; }
-            if (!navigator.mediaDevices?.getUserMedia) { message.error("您的浏览器不支持媒体设备访问，请使用现代浏览器"); return; }
-            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) { message.error("语音功能需要 HTTPS 连接"); return; }
-            try {
-                message.info('正在请求麦克风权限...');
-                await navigator.mediaDevices.getUserMedia({ audio: true });
-                this.livekitRoom = new Room();
-                message.info('正在连接语音服务...');
-                await this.livekitRoom.connect(config.livekit.url, token);
-                await this.livekitRoom.localParticipant.setMicrophoneEnabled(!this.isMutedBySelf && !this.isMutedByHost);
-                this.isVoiceConnected = true;
-                message.success('语音已连接！');
-                const handleAudioTrack = (track) => { if (track.kind === 'audio') document.body.appendChild(track.attach()); };
-                this.livekitRoom.remoteParticipants.forEach(p => p.trackPublications.forEach(pub => pub.track && handleAudioTrack(pub.track)));
-                this.livekitRoom.on(RoomEvent.TrackSubscribed, handleAudioTrack);
-                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, p => message.warn(`${p.identity} 离开了语音。`));
-            } catch (error) {
-                console.error("语音连接错误详情:", error);
-                let errorMessage = "连接语音失败: ";
-                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                    errorMessage += "麦克风权限被拒绝。";
-                    this.$confirm({
-                        title: '麦克风权限被拒绝',
-                        content: `<div style="text-align: left;"><p>请点击浏览器地址栏左侧的锁定图标，允许网站访问您的麦克风，然后刷新页面重试。</p></div>`,
-                        dangerouslyUseHTMLString: true, okText: '我知道了', cancelText: '取消'
-                    });
-                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-                    errorMessage += "未检测到麦克风设备。";
-                } else { errorMessage += error.message || "未知错误"; }
-                message.error(errorMessage);
-                if (this.livekitRoom) {
-                    await this.livekitRoom.disconnect();
-                    this.livekitRoom = null;
-                }
-            }
-        },
-        async disconnectFromVoice() {
-            if (this.livekitRoom) {
-                this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
-                await this.livekitRoom.disconnect();
-                this.livekitRoom = null;
-                this.isVoiceConnected = false;
-                message.warn('语音已断开。');
-            }
-        },
-        toggleSelfMute() {
-            if (!this.livekitRoom || this.isMutedByHost) return;
-            const newMuteState = !this.isMutedBySelf;
-            this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
-            this.isMutedBySelf = newMuteState;
-            message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
-        },
-        checkBrowserCompatibility() {
-            const issues = [];
-            if (!navigator.mediaDevices?.getUserMedia) issues.push('浏览器不支持 getUserMedia API');
-            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) issues.push('语音功能需要 HTTPS 连接');
-            if (issues.length > 0) console.warn('浏览器兼容性检查发现问题:', issues);
-        },
-        showVoiceTestModal() { this.voiceTestModalVisible = true; },
-        handleVoiceTestOk() { this.voiceTestModalVisible = false; message.success('语音诊断完成'); },
-        handleVoiceTestCancel() { this.voiceTestModalVisible = false; },
-        async startEval(){
-            try {
-                const response = await api.put("api/eval/start/"+this.$route.query.id);
-                if(response.data.succeed){ message.info("开始评估"); }
-                else{ message.error("开始评估失败"); }
-            } catch (error) { message.error("评估开始失败"); }
-        },
-        async endEval(){
-            try {
-                const response = await api.put("api/eval/confirm/"+this.$route.query.id);
-                if(response.data.succeed){ message.info("评估完成"); }
-                else{ message.error("结束评估失败") }
-            } catch (error) { message.error("评估结束失败"); }
-        },
-        async handleSaveOpinion(){
-            try {
-                const response = await api.put("api/eval/content",{
-                    evalId: this.$route.query.id,
-                    evalReportTitle: this.evalReportTitle,
-                    evalReportContent: this.form.overallOpinion,
-                    aiMeetingSummary: null,
-                });
-                if(response.data.succeed){ message.info("修改成功"); }
-                else{ message.error("保存意见失败"); }
-            } catch (error) { message.error("保存总体意见失败"); }
-        },
-
         async fetchAlgoDescriptions() {
             this.algoDescLoading = true;
             try {
@@ -1017,16 +791,39 @@ export default {
                 this.algoDescLoading = false;
             }
         },
-        showAlgoDescriptionModal() {
-            this.algoDescModalVisible = true;
+        async fetchChatHistory(){
+            const meetingId = this.$route.query.meetingId;
+            if(!meetingId){
+                message.error("无法获得会议id");
+                return;
+            }
+            try {
+                const response =await api.get('api/meeting-record/list',{
+                    params:{ meetingId }
+                });
+                if(response.data.succeed){
+                    const data = response.data.data;
+                    this.chatHistory = data.slice().reverse().map(msg =>({
+                        ...msg,
+                        user: msg.userAccount,
+                        text: msg.msgContent,
+                        timestamp: msg.recordCreated
+                    }));
+                }else{
+                    message.error("获取消息历史失败",response.data);
+                }
+            } catch (error) {
+                message.error("获取文字聊天历史信息失败");
+                console.log(error);
+            }
         },
-        handleAlgoDescCancel() {
-            this.algoDescModalVisible = false;
-        },
+        showAlgoDescriptionModal() { this.algoDescModalVisible = true; },
+        handleAlgoDescCancel() { this.algoDescModalVisible = false; },
+        
         async showAutoExplainModal() {
             this.autoExplainModalVisible = true;
-            this.autoExplainLLMLoading = true;
-            this.dynamicAutoAnalysis = {};
+            this.autoExplainLLMLoading = true; 
+            this.dynamicAutoAnalysis = {}; // Clear previous state
             const evalId = this.$route.query.id;
             try {
                 const response = await api.get(`/api/eval/${evalId}/analysis-res`);
@@ -1040,9 +837,8 @@ export default {
                 this.autoExplainLLMLoading = false;
             }
         },
-        handleAutoExplainCancel() {
-            this.autoExplainModalVisible = false;
-        },
+        handleAutoExplainCancel() { this.autoExplainModalVisible = false; },
+        
         async generateAutoExplainability() {
             this.autoExplainLLMLoading = true;
             try {
@@ -1073,35 +869,41 @@ export default {
                 this.autoExplainLLMLoading = false;
             }
         },
+
         formatObjectForDisplay(obj) {
             const formatted = {};
             for (const key in obj) {
                 const value = obj[key];
                 if (typeof value === 'object' && value !== null) {
-                    formatted[key] = JSON.stringify(value, null, 2);
+                    formatted[key] = JSON.stringify(value, null, 2); // Pretty-print JSON
                 } else {
-                    formatted[key] = value;
+                    formatted[key] = value; // Keep primitives as is
                 }
             }
             return formatted;
         },
+
         async saveAutoExplainability() {
             this.saveAutoExplainLoading = true;
             try {
                 const objectToSave = {};
                 for (const key in this.dynamicAutoAnalysis) {
                     try {
+                        // If the textarea contains valid JSON, parse it back into an object
                         objectToSave[key] = JSON.parse(this.dynamicAutoAnalysis[key]);
                     } catch (e) {
                         objectToSave[key] = this.dynamicAutoAnalysis[key];
                     }
                 }
+
                 const payload = {
                     evalId: this.$route.query.id,
                     evalExpert: this.$store.getters['auth/userId'],
                     algoAnalysisResult: objectToSave,
                 };
-                const response = await api.post('/api/eval/analysis-res', payload);
+
+                const response = await api.put('/api/eval/analysis-res', payload);
+
                 if (response.data.succeed) {
                     message.success('自动化分析结果保存成功！');
                     this.autoExplainModalVisible = false;
@@ -1114,6 +916,318 @@ export default {
             } finally {
                 this.saveAutoExplainLoading = false;
             }
+        },
+        returnList() { 
+            this.leaveRoom(); 
+            this.disconnectWebSocket(); 
+            this.$router.push('/multiexpert'); 
+        },
+
+        handleText() { this.chatModalVisible = true; },
+        handleChatModalCancel() { this.chatModalVisible = false; },
+
+        async handleSendMessage() {
+            if (!this.newChatMessage.trim() || !this.stompClient || !this.stompClient.active) return;
+            const chatMessage = {
+                meetingId: this.$route.query.meetingId,
+                expertId: this.$store.getters['auth/userId'],
+                userAccount: this.$store.getters['auth/userInfo'].account,
+                type: 'CHAT', payload: this.newChatMessage, timestamp: Date.now()
+            };
+            this.stompClient.publish({
+                destination: '/app/chat',
+                body: JSON.stringify(chatMessage)
+            });
+            this.newChatMessage = '';
+        },
+        showAlgorithmModal() {
+            this.algorithmParams.modificationReason = '';
+            this.algorithmModalVisible = true;
+        },
+        handleAlgorithmSave() {
+            if (!this.algorithmParams.modificationReason) {
+                message.warn('请输入修改理由');
+                return;
+            }
+            this.modalLoading = true;
+            setTimeout(() => {
+                try {
+                    this.modalLoading = false;
+                    this.algorithmModalVisible = false;
+                    message.success('参数已更新，评估结果已重新计算！');
+                } catch (error) {
+                    this.modalLoading = false;
+                }
+            }, 1500);
+        },
+        handleAlgorithmCancel() { this.algorithmModalVisible = false; },
+        
+        showExplainabilityModal() {
+            this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
+            this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
+            this.explainabilityParams.risk = this.form.explain.risk || undefined;
+            this.explainabilityParams.modificationReason = '';
+            this.explainabilityModalVisible = true;
+        },
+        async handleExplainabilitySave() {
+            if (!this.explainabilityParams.modificationReason) {
+                message.warn('请输入修改理由');
+                return;
+            }
+            if (!this.explainabilityParams.overallValue || !this.explainabilityParams.exposure || !this.explainabilityParams.risk) {
+                message.warn('请完成所有字段的选择');
+                return;
+            }
+
+            this.explainabilityModalLoading = true;
+
+            const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+            const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+            const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+            if (!valueMetric || !exposureMetric || !riskMetric) {
+                message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                this.explainabilityModalLoading = false;
+                return;
+            }
+            
+            const payload = {
+                evalId: this.$route.query.id,
+                evalExpert: this.$store.getters['auth/userId'], 
+                metricList: [
+                    { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.overallValue },
+                    { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.exposure },
+                    { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: this.explainabilityParams.risk }
+                ],
+                adjustedReason: this.explainabilityParams.modificationReason
+            };
+
+            await this.updateExplainability(payload, true);
+        },
+        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
+
+        async generateExplainabilityWithLLM() {
+            this.explainLLMLoading = true;
+            try {
+                const llmPayload = {
+                    context: {
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft }
+                    }
+                };
+                const response = await axios.post('http://10.13.1.104:8002/api/chat/analyze-eval', llmPayload);
+
+                if (response.data.answer!=null) {
+                    const text = response.data.answer;
+                    const cleanJSON = text
+                        .replace(/```json/g, '')   
+                        .replace(/```/g, '')       
+                        .trim(); 
+                    const llmResult = JSON.parse(cleanJSON);
+                    const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
+                    const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
+                    const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
+
+                    if (!valueMetric || !exposureMetric || !riskMetric) {
+                        message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
+                        return;
+                    }
+                    
+                    const updatePayload = {
+                        evalId: this.$route.query.id,
+                        evalExpert: this.$store.getters['auth/userId'], 
+                        metricList: [
+                            { metricId: valueMetric.metricId, metricCode: valueMetric.metricCode, adjustedAnalysisRate: llmResult.overallValue },
+                            { metricId: exposureMetric.metricId, metricCode: exposureMetric.metricCode, adjustedAnalysisRate: llmResult.exposure },
+                            { metricId: riskMetric.metricId, metricCode: riskMetric.metricCode, adjustedAnalysisRate: llmResult.risk }
+                        ],
+                        adjustedReason: "由大模型辅助生成"
+                    };
+                    await this.updateExplainability(updatePayload, false);
+                } else {
+                     message.error("大模型辅助生成失败: " + (response.data.message || '未知错误'));
+                }
+            } catch(error) {
+                console.error("大模型辅助生成失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.explainLLMLoading = false;
+            }
+        },
+        
+        async generateOpinionWithLLM() {
+            this.opinionLLMLoading = true;
+            try {
+                 const llmPayload = {
+                    context: {
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft },
+                        explainabilityResult: { description: "自动化评估可解释性分析结果", data: this.form.explain }
+                    }
+                };
+                const response = await axios.post('http://10.13.1.104:8002/api/chat/overall-eval', llmPayload);
+                if(response.data.answer!=null){
+                    const answer = response.data.answer.replace(/\n\s*\n/g, '\n');
+                    this.form.overallOpinion = answer;
+                    message.success('大模型已生成评估意见，请确认后保存。');
+                    await this.handleSaveOpinion();
+                }
+            } catch (error) {
+                console.error("大模型辅助生成意见失败:", error);
+                message.error('大模型服务请求失败，请检查网络或联系管理员。');
+            } finally {
+                this.opinionLLMLoading = false;
+            }
+        },
+
+        async updateExplainability(payload, fromModal) {
+            const loadingState = fromModal ? 'explainabilityModalLoading' : 'explainLLMLoading';
+            this[loadingState] = true;
+            try {
+                const response = await api.put("/api/metric-eval", payload);
+                if (response.data.succeed) {
+                    const rateMap = payload.metricList.reduce((acc, item) => {
+                        acc[item.metricCode] = item.adjustedAnalysisRate;
+                        return acc;
+                    }, {});
+
+                    this.form.explain.overallValue = rateMap['漏洞价值'];
+                    this.form.explain.exposure = rateMap['漏洞暴露度'];
+                    this.form.explain.risk = rateMap['漏洞风险'];
+
+                    message.success('可解释性分析结果已成功更新！');
+                    if (fromModal) {
+                        this.explainabilityModalVisible = false;
+                    }
+                } else {
+                    message.error('保存失败: ' + (response.data.message || '未知错误'));
+                }
+            } catch (error) {
+                console.error("保存可解释性分析结果失败:", error);
+                message.error('网络请求失败，请检查您的网络连接或联系管理员。');
+            } finally {
+                this[loadingState] = false;
+            }
+        },
+        
+        toggleVoiceConnection() {
+            if (this.isVoiceConnected) {
+                this.disconnectFromVoice();
+            } else {
+                this.connectToVoice(); 
+            }
+        },
+
+        async connectToVoice() {
+            if (this.livekitRoom) return;
+            if (this.livekitToken) {
+                this.connectToVoiceWithToken(this.livekitToken);
+            } else {
+                message.warn("语音服务正在准备中，请稍后再试。");
+            }
+        },
+
+        async connectToVoiceWithToken(token) {
+            if (!token) { message.error("获取语音授权失败！"); return; }
+            if (!navigator.mediaDevices?.getUserMedia) { message.error("您的浏览器不支持媒体设备访问，请使用现代浏览器"); return; }
+            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) { message.error("语音功能需要 HTTPS 连接"); return; }
+
+            try {
+                message.info('正在请求麦克风权限...');
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.livekitRoom = new Room();
+                message.info('正在连接语音服务...');
+                await this.livekitRoom.connect(config.livekit.url, token);
+                await this.livekitRoom.localParticipant.setMicrophoneEnabled(!this.isMutedBySelf && !this.isMutedByHost);
+                this.isVoiceConnected = true;
+                message.success('语音已连接！');
+                const handleAudioTrack = (track) => {
+                    if (track.kind === 'audio') document.body.appendChild(track.attach());
+                };
+                this.livekitRoom.remoteParticipants.forEach(p => p.trackPublications.forEach(pub => pub.track && handleAudioTrack(pub.track)));
+                this.livekitRoom.on(RoomEvent.TrackSubscribed, handleAudioTrack);
+                this.livekitRoom.on(RoomEvent.ParticipantDisconnected, p => message.warn(`${p.identity} 离开了语音。`));
+            } catch (error) {
+                console.error("语音连接错误详情:", error);
+                let errorMessage = "连接语音失败: ";
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    errorMessage += "麦克风权限被拒绝。";
+                    this.$confirm({
+                        title: '麦克风权限被拒绝',
+                        content: `<div style="text-align: left;"><p>请点击浏览器地址栏左侧的锁定图标，允许网站访问您的麦克风，然后刷新页面重试。</p></div>`,
+                        dangerouslyUseHTMLString: true, okText: '我知道了', cancelText: '取消'
+                    });
+                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    errorMessage += "未检测到麦克风设备。";
+                } else {
+                    errorMessage += error.message || "未知错误";
+                }
+                message.error(errorMessage);
+                if (this.livekitRoom) {
+                    await this.livekitRoom.disconnect();
+                    this.livekitRoom = null;
+                }
+            }
+        },
+
+        async disconnectFromVoice() {
+            if (this.livekitRoom) {
+                this.livekitRoom.localParticipant.setMicrophoneEnabled(false);
+                await this.livekitRoom.disconnect();
+                this.livekitRoom = null;
+                this.isVoiceConnected = false;
+                message.warn('语音已断开。');
+            }
+        },
+
+        toggleSelfMute() {
+            if (!this.livekitRoom || this.isMutedByHost) return;
+            const newMuteState = !this.isMutedBySelf;
+            this.livekitRoom.localParticipant.setMicrophoneEnabled(!newMuteState);
+            this.isMutedBySelf = newMuteState;
+            message.info(newMuteState ? '麦克风已静音' : '麦克风已开启');
+        },
+
+        checkBrowserCompatibility() {
+            const issues = [];
+            if (!navigator.mediaDevices?.getUserMedia) issues.push('浏览器不支持 getUserMedia API');
+            if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) issues.push('语音功能需要 HTTPS 连接');
+            if (issues.length > 0) console.warn('浏览器兼容性检查发现问题:', issues);
+        },
+
+        showVoiceTestModal() { this.voiceTestModalVisible = true; },
+        handleVoiceTestOk() { this.voiceTestModalVisible = false; message.success('语音诊断完成'); },
+        handleVoiceTestCancel() { this.voiceTestModalVisible = false; },
+
+        async startEval(){
+            try {
+                const response = await api.put("api/eval/start/"+this.$route.query.id);
+                if(response.data.succeed){ message.info("开始评估"); }
+                else{ message.error("开始评估失败"); }
+            } catch (error) { message.error("评估开始失败"); }
+        },
+        async endEval(){
+            try {
+                const response = await api.put("api/eval/confirm/"+this.$route.query.id);
+                if(response.data.succeed){ message.info("评估完成"); }
+                else{ message.error("结束评估失败") }
+            } catch (error) { message.error("评估结束失败"); }
+        },
+        async handleSaveOpinion(){
+            try {
+                const response = await api.put("api/eval/content",{
+                    evalId: this.$route.query.id,
+                    evalReportTitle: this.evalReportTitle,
+                    evalReportContent: this.form.overallOpinion,
+                    aiMeetingSummary: null,
+                });
+                if(response.data.succeed){ message.info("修改成功"); }
+                else{ message.error("保存意见失败"); }
+            } catch (error) { message.error("保存总体意见失败"); }
         },
     }
 }
@@ -1278,6 +1392,7 @@ export default {
     padding: 10px;
     color: #333;
 }
+/* 聊天弹窗样式 */
 .chat-history {
     height: 350px;
     overflow-y: auto;
