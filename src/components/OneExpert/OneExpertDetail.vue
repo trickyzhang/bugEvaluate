@@ -296,20 +296,15 @@
             width="60%"
             :footer="null"
         >
-            <a-form layout="vertical">
-                <a-form-item label="漏洞价值分析">
-                    <a-textarea v-model="autoExplainAnalysis['漏洞价值']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
-                </a-form-item>
-                 <a-form-item label="漏洞武器分析">
-                    <a-textarea v-model="autoExplainAnalysis['漏洞武器']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
-                </a-form-item>
-                 <a-form-item label="漏洞服务分析">
-                    <a-textarea v-model="autoExplainAnalysis['漏洞服务']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
-                </a-form-item>
-                 <a-form-item label="漏洞可利用性分析">
-                    <a-textarea v-model="autoExplainAnalysis['漏洞可利用性']" :rows="4" placeholder="请输入分析语句或由大模型辅助生成" />
-                </a-form-item>
-            </a-form>
+            <a-spin :spinning="autoExplainLLMLoading">
+                <a-form layout="vertical" v-if="Object.keys(dynamicAutoAnalysis).length > 0">
+                    <a-form-item v-for="(value, key) in dynamicAutoAnalysis" :key="key" :label="key">
+                        <a-textarea v-model="dynamicAutoAnalysis[key]" :rows="5" placeholder="分析内容" />
+                    </a-form-item>
+                </a-form>
+                <a-empty v-else description="暂无分析内容，请点击下方按钮生成" />
+            </a-spin>
+
             <div class="modal-footer" style="text-align: right; margin-top: 16px;">
                 <a-button @click="generateAutoExplainability" :loading="autoExplainLLMLoading" style="margin-right: 8px;">
                     大模型辅助生成
@@ -355,85 +350,34 @@ export default {
     data() {
         return {
             form: {
-                basic: {
-                    cveID: '',
-                    cveType: '',
-                    softwareType: '',
-                    cveTitle: '',
-                    cveDescription: '',
-                },
-                threatIntelligence: {
-                    field1: '',
-                    field2: '',
-                    field3: '', 
-                },
+                basic: { cveID: '', cveType: '', softwareType: '', cveTitle: '', cveDescription: '' },
+                threatIntelligence: { field1: '', field2: '', field3: '' },
                 religion: { field1: '', field2: '' },
-                autoSoft: {
-                    value: '',
-                    weapon: '',
-                    service: '',
-                    exploitability: '',
-                },
-                autoSoftAnalysis: {
-                    '漏洞价值': '',
-                    '漏洞武器': '',
-                    '漏洞服务': '',
-                    '漏洞可利用性': '',
-                },
-                explain: {
-                    overallValue: '',
-                    exposure: '',
-                    risk: '',
-                },
+                autoSoft: { value: '', weapon: '', service: '', exploitability: '', valueResult: '' },
+                explain: { overallValue: '', exposure: '', risk: '' },
                 overallOpinion: '',
             },
             localStore: {
-                vulnInfo: null,
-                threatIntel: null,
-                religionInfo: null,
-                autoSoft: null,
-                metricInfo: [],
-                algoDescriptions: [], 
+                vulnInfo: null, threatIntel: null, religionInfo: null, autoSoft: null, metricInfo: [], algoDescriptions: [], 
             },
             retrieval: {
-                sources: [],
-                dateRange: [],
-                keywords: '',
-                vulnType: undefined,
-                other: '',
-                resultView: 'table',
+                sources: [], dateRange: [], keywords: '', vulnType: undefined, other: '', resultView: 'table',
             },
             algorithmModalVisible: false,
             modalLoading: false,
-            algorithmParams: {
-                paramA: '默认值1',
-                paramB: '默认值2',
-                paramC: '默认值3',
-                paramD: '默认值4',
-                modificationReason: '', 
-            },
+            algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
             explainabilityModalVisible: false,
             explainabilityModalLoading: false,
             explainLLMLoading: false, 
             opinionLLMLoading: false, 
-            explainabilityParams: {
-                overallValue: undefined,
-                exposure: undefined,
-                risk: undefined,
-                modificationReason: '',
-            },
+            explainabilityParams: { overallValue: undefined, exposure: undefined, risk: undefined, modificationReason: '' },
             evalReportTitle: '',
             algoDescModalVisible: false,
             algoDescLoading: false,
             autoExplainModalVisible: false,
             autoExplainLLMLoading: false,
             saveAutoExplainLoading: false,
-            autoExplainAnalysis: {
-                '漏洞价值': '',
-                '漏洞武器': '',
-                '漏洞服务': '',
-                '漏洞可利用性': '',
-            },
+            dynamicAutoAnalysis: {},
         }
     },
     created() {
@@ -451,7 +395,6 @@ export default {
                 const response = await api.get(`/api/eval/${id}`);
                 if (response.data.succeed) {
                     const data = response.data.data;
-
                     if (data.vulnInfo) {
                         this.localStore.vulnInfo = { ...data.vulnInfo }; 
                         this.form.basic.cveID = data.vulnInfo.cveId;
@@ -471,85 +414,47 @@ export default {
                     if (data.dimVOList && Array.isArray(data.dimVOList)) {
                         this.localStore.autoSoft = [ ...data.dimVOList ]; 
                         data.dimVOList.forEach(item => {
-                            if(item.analysisResult) {
-                                this.form.autoSoftAnalysis[item.dimensionCode] = item.analysisResult;
-                            }
                             if(item.isisAdjusted == 0){
                                 switch (item.dimensionCode) {
-                                case '漏洞价值':
-                                    this.form.autoSoft.value = item.originalEvalValue;
-                                    break;
-                                case '漏洞武器':
-                                    this.form.autoSoft.weapon = item.originalEvalValue;
-                                    break;
-                                case '漏洞服务':
-                                    this.form.autoSoft.service = item.originalEvalValue;
-                                    break;
-                                case '漏洞可利用性':
-                                    this.form.autoSoft.exploitability = item.originalEvalValue;
-                                    break;
+                                case '漏洞价值': this.form.autoSoft.value = item.originalEvalValue; break;
+                                case '漏洞武器': this.form.autoSoft.weapon = item.originalEvalValue; break;
+                                case '漏洞服务': this.form.autoSoft.service = item.originalEvalValue; break;
+                                case '漏洞可利用性': this.form.autoSoft.exploitability = item.originalEvalValue; break;
                                 }
                             }else{
                                 switch (item.dimensionCode) {
-                                case '漏洞价值':
-                                    this.form.autoSoft.value = item.adjustedEvalValue;
-                                    break;
-                                case '漏洞武器':
-                                    this.form.autoSoft.weapon = item.adjustedEvalValue;
-                                    break;
-                                case '漏洞服务':
-                                    this.form.autoSoft.service = item.adjustedEvalValue;
-                                    break;
-                                case '漏洞可利用性':
-                                    this.form.autoSoft.exploitability = item.adjustedEvalValue;
-                                    break;
+                                case '漏洞价值': this.form.autoSoft.value = item.adjustedEvalValue; break;
+                                case '漏洞武器': this.form.autoSoft.weapon = item.adjustedEvalValue; break;
+                                case '漏洞服务': this.form.autoSoft.service = item.adjustedEvalValue; break;
+                                case '漏洞可利用性': this.form.autoSoft.exploitability = item.adjustedEvalValue; break;
                                 }
                             }
-                            
-                            
                         });
                     }
 
-                    if (data.metricVOList && Array.isArray(data.metricVOList)) {
-                        this.localStore.metricInfo = data.metricVOList.map(item => ({ 
-                            metricId: item.metricId,
-                            metricCode: item.metricCode
-                        }));
+                    if(data.evalValueVO) { this.form.autoSoft.valueResult = data.evalValueVO.originalEvalValue; }
 
+                    if (data.metricVOList && Array.isArray(data.metricVOList)) {
+                        this.localStore.metricInfo = data.metricVOList.map(item => ({ metricId: item.metricId, metricCode: item.metricCode }));
                         data.metricVOList.forEach(item => {
                             if(item.isisAdjusted == 0){
                                 switch (item.metricCode) {
-                                case '漏洞价值': 
-                                    this.form.explain.overallValue = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞暴露度':
-                                    this.form.explain.exposure = item.originalAnalysisRate;
-                                    break;
-                                case '漏洞风险':
-                                    this.form.explain.risk = item.originalAnalysisRate;
-                                    break;
+                                case '漏洞价值': this.form.explain.overallValue = item.originalAnalysisRate; break;
+                                case '漏洞暴露度': this.form.explain.exposure = item.originalAnalysisRate; break;
+                                case '漏洞风险': this.form.explain.risk = item.originalAnalysisRate; break;
                                 }
                             }else{
                                 switch (item.metricCode) {
-                                case '漏洞价值': 
-                                    this.form.explain.overallValue = item.adjustedAnalysisRate;
-                                    break;
-                                case '漏洞暴露度':
-                                    this.form.explain.exposure = item.adjustedAnalysisRate;
-                                    break;
-                                case '漏洞风险':
-                                    this.form.explain.risk = item.adjustedAnalysisRate;
-                                    break;
+                                case '漏洞价值': this.form.explain.overallValue = item.adjustedAnalysisRate; break;
+                                case '漏洞暴露度': this.form.explain.exposure = item.adjustedAnalysisRate; break;
+                                case '漏洞风险': this.form.explain.risk = item.adjustedAnalysisRate; break;
                                 }
                             }
                         });
                     }
-                    
                     this.form.overallOpinion = data.evalReportContent;
                     this.evalReportTitle = data.evalReportTitle;
-                    
                     this.fetchReligionData(id);
-
                     message.success(`成功加载漏洞 ${id} 的详情。`);
                 } else {
                     message.error('获取漏洞详情失败');
@@ -568,9 +473,7 @@ export default {
                     this.localStore.religionInfo = { ...religionData };
                     this.form.religion.field1 = religionData.field1;
                     this.form.religion.field2 = religionData.field2;
-                } else {
-                     message.error('获取漏洞地域信息失败。');
-                }
+                } else { message.error('获取漏洞地域信息失败。'); }
             } catch (error) {
                 console.warn("无法从/api/vuln-location获取数据，将使用模拟数据。");
                 const mockReligionData = { field1: '模拟地域A', field2: '模拟地域B' };
@@ -585,9 +488,7 @@ export default {
                 const response = await api.get('/api/eval-algo/list');
                 if (response.data.succeed) {
                     this.localStore.algoDescriptions = response.data.data;
-                } else {
-                    message.error("获取算法描述失败: " + response.data.message);
-                }
+                } else { message.error("获取算法描述失败: " + response.data.message); }
             } catch (error) {
                 console.error("获取算法描述接口失败:", error);
                 message.error("获取算法描述接口请求失败");
@@ -595,9 +496,7 @@ export default {
                 this.algoDescLoading = false;
             }
         },
-        returnList() {
-            this.$router.push('/oneexpert');
-        },
+        returnList() { this.$router.push('/oneexpert'); },
         showAlgorithmModal() {
             this.algorithmParams.modificationReason = '';
             this.algorithmModalVisible = true;
@@ -608,80 +507,54 @@ export default {
                 return;
             }
             this.modalLoading = true;
-            console.log("正在将以下参数发送到服务器:", this.algorithmParams);
-
             setTimeout(() => {
-                try {
-                    this.modalLoading = false;
-                    this.algorithmModalVisible = false;
-                    message.success('参数已更新，评估结果已重新计算！');
-                } catch (error) {
-                    this.modalLoading = false;
-                }
+                this.modalLoading = false;
+                this.algorithmModalVisible = false;
+                message.success('参数已更新，评估结果已重新计算！');
             }, 1500);
         },
-        handleAlgorithmCancel() {
-            this.algorithmModalVisible = false;
-        },
-        showAlgoDescriptionModal() {
-            this.algoDescModalVisible = true;
-        },
-        handleAlgoDescCancel() {
-            this.algoDescModalVisible = false;
-        },
-        showAutoExplainModal() {
-            this.autoExplainAnalysis = { ...this.form.autoSoftAnalysis };
+        handleAlgorithmCancel() { this.algorithmModalVisible = false; },
+        showAlgoDescriptionModal() { this.algoDescModalVisible = true; },
+        handleAlgoDescCancel() { this.algoDescModalVisible = false; },
+        
+        async showAutoExplainModal() {
             this.autoExplainModalVisible = true;
+            this.autoExplainLLMLoading = true; 
+            this.dynamicAutoAnalysis = {}; // Clear previous state
+            const evalId = this.$route.query.id;
+            try {
+                const response = await api.get(`/api/eval/${evalId}/analysis-res`);
+                if (response.data.succeed && response.data.data) {
+                    const savedObject = JSON.parse(response.data.data);
+                    this.dynamicAutoAnalysis = this.formatObjectForDisplay(savedObject);
+                }
+            } catch (error) {
+                console.log("获取已保存的分析结果失败（可能尚未创建）:", error);
+            } finally {
+                this.autoExplainLLMLoading = false;
+            }
         },
-        handleAutoExplainCancel() {
-            this.autoExplainModalVisible = false;
-        },
+        handleAutoExplainCancel() { this.autoExplainModalVisible = false; },
+        
         async generateAutoExplainability() {
             this.autoExplainLLMLoading = true;
             try {
-                if (!this.localStore.algoDescriptions || this.localStore.algoDescriptions.length === 0) {
-                    await this.fetchAlgoDescriptions();
-                }
+                if (!this.localStore.algoDescriptions?.length) { await this.fetchAlgoDescriptions(); }
                 const llmPayload = {
                     context: {
-                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo, },
-                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel, },
-                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo, },
-                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft, },
-                        algoAnalysis: { description: "四种评估算法解释数据", data: this.localStore.algoDescriptions, }
+                        basicInfo: { description: "漏洞基本信息", data: this.localStore.vulnInfo },
+                        threatIntel: { description: "威胁情报来源", data: this.localStore.threatIntel },
+                        religionInfo: { description: "漏洞地域信息", data: this.localStore.religionInfo },
+                        autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft },
+                        algoAnalysis: { description: "四种评估算法解释数据", data: this.localStore.algoDescriptions }
                     }
                 };
                 const response = await axios.post('http://10.13.1.104:8002/api/chat/eval_algo_analysis', llmPayload);
-                if (response.data && response.data.answer) {
+                if (response.data?.answer) {
                     const text = response.data.answer;
                     const cleanJSON = text.replace(/```json/g, '').replace(/```/g, '').trim();
                     const llmResult = JSON.parse(cleanJSON);
-
-                    console.log(llmResult);
-
-                    const formattedAnalysis = {
-                        '漏洞价值': '',
-                        '漏洞武器': '',
-                        '漏洞服务': '',
-                        '漏洞可利用性': '',
-                    };
-
-                    const keyMapping = {
-                        "漏洞价值": "VULN_VALUE",
-                        "漏洞武器": "VULN_WEAPON",
-                        "漏洞服务": "VULN_SERVICE",
-                        "漏洞可利用性": "VULN_EXPLOIT"
-                    };
-
-                    for (const shortKey in keyMapping) {
-                        const longKey = keyMapping[shortKey];
-                        if (llmResult[longKey] && llmResult[longKey]['分析结果']) {
-                            formattedAnalysis[shortKey] = llmResult[longKey]['分析结果'];
-                        }
-                    }
-
-                    this.autoExplainAnalysis = formattedAnalysis;
-                    
+                    this.dynamicAutoAnalysis = this.formatObjectForDisplay(llmResult);
                     message.success("大模型已生成分析结果，请确认后保存。");
                 } else {
                     message.error("大模型未能生成有效的分析结果");
@@ -693,29 +566,46 @@ export default {
                 this.autoExplainLLMLoading = false;
             }
         },
+
+        formatObjectForDisplay(obj) {
+            const formatted = {};
+            for (const key in obj) {
+                const value = obj[key];
+                if (typeof value === 'object' && value !== null) {
+                    formatted[key] = JSON.stringify(value, null, 2); // Pretty-print JSON
+                } else {
+                    formatted[key] = value; // Keep primitives as is
+                }
+            }
+            return formatted;
+        },
+
         async saveAutoExplainability() {
             this.saveAutoExplainLoading = true;
             try {
-                const dimensionList = this.localStore.autoSoft.map(dim => ({
-                    dimensionId: dim.dimensionId,
-                    dimensionCode: dim.dimensionCode,
-                    analysisResult: this.autoExplainAnalysis[dim.dimensionCode] || ''
-                }));
+                const objectToSave = {};
+                for (const key in this.dynamicAutoAnalysis) {
+                    try {
+                        // If the textarea contains valid JSON, parse it back into an object
+                        objectToSave[key] = JSON.parse(this.dynamicAutoAnalysis[key]);
+                    } catch (e) {
+                        objectToSave[key] = this.dynamicAutoAnalysis[key];
+                    }
+                }
 
                 const payload = {
                     evalId: this.$route.query.id,
                     evalExpert: this.$store.getters['auth/userId'],
-                    dimensionList: dimensionList,
+                    algoAnalysisResult: objectToSave,
                 };
 
-                const response = await api.put('api/dimension-eval/analysis-res', payload);
+                const response = await api.put('/api/eval/analysis-res', payload);
 
                 if (response.data.succeed) {
                     message.success('自动化分析结果保存成功！');
-                    this.form.autoSoftAnalysis = { ...this.autoExplainAnalysis };
                     this.autoExplainModalVisible = false;
                 } else {
-                    message.error('保存失败');
+                    message.error('保存失败: ' + (response.data.message || '未知错误'));
                 }
             } catch (error) {
                 console.error("保存自动化分析结果失败:", error);
@@ -724,6 +614,7 @@ export default {
                 this.saveAutoExplainLoading = false;
             }
         },
+
         showExplainabilityModal() {
             this.explainabilityParams.overallValue = this.form.explain.overallValue || undefined;
             this.explainabilityParams.exposure = this.form.explain.exposure || undefined;
@@ -732,27 +623,18 @@ export default {
             this.explainabilityModalVisible = true;
         },
         async handleExplainabilitySave() {
-            if (!this.explainabilityParams.modificationReason) {
-                message.warn('请输入修改理由');
-                return;
-            }
-            if (!this.explainabilityParams.overallValue || !this.explainabilityParams.exposure || !this.explainabilityParams.risk) {
-                message.warn('请完成所有字段的选择');
-                return;
-            }
+            if (!this.explainabilityParams.modificationReason) { message.warn('请输入修改理由'); return; }
+            if (!this.explainabilityParams.overallValue || !this.explainabilityParams.exposure || !this.explainabilityParams.risk) { message.warn('请完成所有字段的选择'); return; }
             
             this.explainabilityModalLoading = true;
-
             const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
             const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
             const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
-
             if (!valueMetric || !exposureMetric || !riskMetric) {
                 message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
                 this.explainabilityModalLoading = false;
                 return;
             }
-            
             const payload = {
                 evalId: this.$route.query.id,
                 evalExpert: this.$store.getters['auth/userId'], 
@@ -765,9 +647,7 @@ export default {
             };
             await this.updateExplainability(payload, true);
         },
-        handleExplainabilityCancel() {
-            this.explainabilityModalVisible = false;
-        },
+        handleExplainabilityCancel() { this.explainabilityModalVisible = false; },
         async generateExplainabilityWithLLM() {
             this.explainLLMLoading = true;
             try {
@@ -779,9 +659,7 @@ export default {
                         autoSoftResult: { description: "自动化软件漏洞评估结果", data: this.localStore.autoSoft, }
                     }
                 };
-
                 const response = await axios.post('http://10.13.1.104:8002/api/chat/analyze-eval', llmPayload);
-
                 if (response.data.answer!=null) {
                     const text = response.data.answer;
                     const cleanJSON = text.replace(/```json/g, '').replace(/```/g, '').trim(); 
@@ -789,12 +667,7 @@ export default {
                     const valueMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞价值');
                     const exposureMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞暴露度');
                     const riskMetric = this.localStore.metricInfo.find(m => m.metricCode === '漏洞风险');
-
-                    if (!valueMetric || !exposureMetric || !riskMetric) {
-                        message.error('无法找到原始指标ID,请刷新页面或联系管理员。');
-                        return;
-                    }
-
+                    if (!valueMetric || !exposureMetric || !riskMetric) { message.error('无法找到原始指标ID,请刷新页面或联系管理员。'); return; }
                     const updatePayload = {
                         evalId: this.$route.query.id,
                         evalExpert: this.$store.getters['auth/userId'], 
@@ -806,9 +679,7 @@ export default {
                         adjustedReason: "由大模型辅助生成"
                     };
                     await this.updateExplainability(updatePayload, false);
-                } else {
-                     message.error("大模型辅助生成失败");
-                }
+                } else { message.error("大模型辅助生成失败"); }
             } catch(error) {
                 console.error("大模型辅助生成失败:", error);
                 message.error('大模型服务请求失败，请检查网络或联系管理员。');
@@ -828,7 +699,6 @@ export default {
                         explainabilityResult: { description: "专家评估结果", data: this.form.explain, }
                     }
                 };
-
                 const response = await axios.post('http://10.13.1.104:8002/api/chat/overall-eval', llmPayload);
                 if(response.data.answer!=null){
                     const answer = response.data.answer.replace(/\n\s*\n/g, '\n');
@@ -853,15 +723,11 @@ export default {
                         acc[item.metricCode] = item.adjustedAnalysisRate;
                         return acc;
                     }, {});
-
                     this.form.explain.overallValue = rateMap['漏洞价值'];
                     this.form.explain.exposure = rateMap['漏洞暴露度'];
                     this.form.explain.risk = rateMap['漏洞风险'];
-
                     message.success('可解释性分析结果已成功更新！');
-                    if (fromModal) {
-                        this.explainabilityModalVisible = false;
-                    }
+                    if (fromModal) { this.explainabilityModalVisible = false; }
                 } else {
                     message.error('保存失败');
                     console.log(response.data)
@@ -876,29 +742,19 @@ export default {
         async startEval(){
             try {
                 const response = await api.put("api/eval/start/"+this.$route.query.id);
-                if(response.data.succeed){
-                    message.info("开始评估");
-                }else{
-                    message.error("开始评估失败");
-                    console.log(response.data);
-                }
+                if(response.data.succeed){ message.info("开始评估"); }
+                else{ message.error("开始评估失败"); console.log(response.data); }
             } catch (error) {
-                message.error("评估开始失败");
-                console.log(error);
+                message.error("评估开始失败"); console.log(error);
             }
         },
         async endEval(){
             try {
                 const response = await api.put("api/eval/confirm/"+this.$route.query.id);
-                if(response.data.succeed){
-                    message.info("评估完成");
-                }else{
-                    message.error("结束评估失败")
-                    console.log(response.data);
-                }
+                if(response.data.succeed){ message.info("评估完成"); }
+                else{ message.error("结束评估失败"); console.log(response.data); }
             } catch (error) {
-                message.error("评估结束失败");
-                console.log(error);
+                message.error("评估结束失败"); console.log(error);
             }
         },
         async handleSaveOpinion(){
@@ -910,15 +766,10 @@ export default {
                     evalReportContent: this.form.overallOpinion,
                     aiMeetingSummary: null,
                 });
-                if(response.data.succeed){
-                    message.success("总体评估意见已保存！");
-                }else{
-                    message.error("保存意见失败");
-                    console.log(response.data);
-                }
+                if(response.data.succeed){ message.success("总体评估意见已保存！"); }
+                else{ message.error("保存意见失败"); console.log(response.data); }
             } catch (error) {
-                message.error("保存总体意见失败");
-                console.log(error);
+                message.error("保存总体意见失败"); console.log(error);
             }
         },
     },
