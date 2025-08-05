@@ -155,15 +155,18 @@
                 <div class="retrieval-panel">
                     <h3 class="panel-title">数据检索</h3>
                     <a-form layout="vertical">
-                        <a-form-item label="请选择数据来源">
-                            <a-checkbox-group v-model="retrieval.sources">
-                                <a-checkbox value="1">漏洞验证数据</a-checkbox>
-                                <a-checkbox value="2">漏洞地域</a-checkbox>
-                                <a-checkbox value="3">各评测算法解释数据</a-checkbox>
-                                <a-checkbox value="4">漏洞影响数据</a-checkbox>
-                                <a-checkbox value="5">历史同类漏洞评估案例数据</a-checkbox>
-                                <a-checkbox value="6">威胁情报</a-checkbox>
-                            </a-checkbox-group>
+                        <a-form-item>
+                            <label class="ant-form-item-label">请选择数据来源</label>
+    
+                            <a-radio-group v-model="retrieval.source">
+                            <a-radio value="VULN_VERIFY">漏洞验证数据</a-radio>
+                            <a-radio value="REGION">漏洞地域</a-radio>
+                            <a-radio value="ALGO">各评测算法解释数据</a-radio>
+                            <a-radio value="VULN_IMPACT">漏洞影响数据</a-radio>
+                            <a-radio value="REPORT">历史同类漏洞评估案例数据</a-radio>
+                            <a-radio value="INTEL">威胁情报</a-radio>
+                            </a-radio-group>
+
                         </a-form-item>
 
                         <div class="retrieval-request-box">
@@ -186,20 +189,45 @@
                             </a-form-item>
                         </div>
 
-                        <a-button type="primary" block>开始检索</a-button>
+                        <a-button type="primary" block @click="handleDataRetrieval" :loading="retrievalLoading">开始检索</a-button>
 
                         <div class="retrieval-result-box">
                             <p class="box-title">数据检索结果</p>
+    
                             <a-radio-group v-model="retrieval.resultView" button-style="solid">
                                 <a-radio-button value="table">表格</a-radio-button>
-                                <a-radio-button value="line">折线图</a-radio-button>
-                                <a-radio-button value="pie">饼状图</a-radio-button>
+                                <a-radio-button value="chart">图表</a-radio-button>
                                 <a-radio-button value="llm">大模型生成结果</a-radio-button>
                             </a-radio-group>
+    
                             <div class="display-area">
-                                <p>展示区域</p>
+                                <div v-if="retrieval.resultView === 'table'" style="width: 100%;">
+                                    <a-table 
+                                    :columns="tableColumns" 
+                                    :dataSource="retrievalResults" 
+                                    :loading="retrievalLoading"
+                                    :scroll="{ x: 1000 }"
+                                    rowKey="id"
+                                    v-if="retrievalResults.length > 0"
+                                    ></a-table>
+                                    <a-empty v-else description="暂无数据或未开始检索" />
+                                </div>
+
+                                <div v-else-if="retrieval.resultView === 'chart'" style="width: 100%; height: 100%;">
+                                    <v-chart
+                                    v-if="activeChartOption"
+                                    :option="activeChartOption"
+                                    :loading="retrievalLoading"
+                                    style="height: 350px; width: 100%;"
+                                    autoresize
+                                    />
+                                    <a-empty v-else description="请先选择一个数据来源并开始检索" />
+                                </div>
+        
+                                <div v-else-if="retrieval.resultView === 'llm'">
+                                </div>
                             </div>
-                        </div>
+                        </div>                
                     </a-form>
                 </div>
             </a-col>
@@ -318,10 +346,20 @@
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Checkbox, Radio, Select, DatePicker, Modal, message, Spin, Collapse, Empty } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Radio, Select, DatePicker, Modal, message, Spin, Collapse, Empty } from 'ant-design-vue';
 
 import api from '@/utils/axios';
 import axios from 'axios';
+
+const FIELD_MAPPING = {
+  'VULN_VERIFY': { fieldName: 'validationMethod', displayName: '漏洞验证方式', chartType: 'pie' },
+  'REGION': { fieldName: 'region', displayName: '漏洞地域分布', chartType: 'pie' },
+  'VULN_IMPACT': { fieldName: 'impactScore', displayName: '漏洞影响分数', chartType: 'line' },
+  'INTEL': { fieldName: 'threatSource', displayName: '威胁情报来源', chartType: 'pie' },
+  // 新增以下两个映射
+  'ALGO': { fieldName: 'algoScore', displayName: '算法评测分数', chartType: 'line' },
+  'REPORT': { fieldName: 'historicalRiskLevel', displayName: '历史案例风险分布', chartType: 'pie' },
+};
 
 export default {
     name: 'VulnerabilityAssessment',
@@ -333,8 +371,6 @@ export default {
         'a-form': Form,
         'a-form-item': Form.Item, 
         'a-input': Input,
-        'a-checkbox-group': Checkbox.Group,
-        'a-checkbox': Checkbox,
         'a-radio-group': Radio.Group,
         'a-radio-button': Radio.Button,
         'a-select': Select,
@@ -361,8 +397,16 @@ export default {
                 vulnInfo: null, threatIntel: null, religionInfo: null, autoSoft: null, metricInfo: [], algoDescriptions: [], 
             },
             retrieval: {
-                sources: [], dateRange: [], keywords: '', vulnType: undefined, other: '', resultView: 'table',
+                source: null, 
+                dateRange: [], 
+                keywords: '',
+                vulnType: undefined, 
+                other: '', 
+                resultView: 'table',
             },
+            retrievalLoading: false,
+            retrievalResults: [],    
+            mindMapResult: null,
             algorithmModalVisible: false,
             modalLoading: false,
             algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
@@ -378,6 +422,40 @@ export default {
             autoExplainLLMLoading: false,
             saveAutoExplainLoading: false,
             dynamicAutoAnalysis: {},
+            tableColumns: [
+                { title: '漏洞ID', dataIndex: 'id', key: 'id', width: 150, fixed: 'left' }, // 使用 fixed: 'left' 固定在左侧
+                { title: '发现日期', dataIndex: 'date', key: 'date', width: 120 },
+                { title: '影响分数', dataIndex: 'impactScore', key: 'impactScore', width: 100, sorter: (a, b) => a.impactScore - b.impactScore },
+                { title: '地域', dataIndex: 'region', key: 'region', width: 100 },
+                { title: '验证方式', dataIndex: 'validationMethod', key: 'validationMethod', width: 120 },
+                { title: '威胁来源', dataIndex: 'threatSource', key: 'threatSource', width: 120 },
+                { title: '算法分数', dataIndex: 'algoScore', key: 'algoScore', width: 100, sorter: (a, b) => a.algoScore - b.algoScore },
+                { title: '历史风险', dataIndex: 'historicalRiskLevel', key: 'historicalRiskLevel', width: 120 },
+            ],
+        }
+    },
+    computed:{
+        activeChartOption() {
+            // 1. 检查是否选择了数据源
+            if (!this.retrieval.source || this.retrievalResults.length === 0) {
+                return null; // 如果没有选择或没有数据，不生成图表
+            }
+
+            // 2. 从映射表中找到对应的配置信息
+            const mapping = FIELD_MAPPING[this.retrieval.source];
+            if (!mapping) {
+                return null; // 如果选择的源没有映射，不生成图表
+            }
+
+            // 3. 根据映射的 chartType 调用对应的生成函数
+            let option = {};
+            if (mapping.chartType === 'pie') {
+                option = this.generatePieOption(mapping.fieldName, mapping.displayName);
+            } else if (mapping.chartType === 'line') {
+            option = this.generateLineOption(mapping.fieldName, mapping.displayName);
+            }
+      
+            return option;
         }
     },
     created() {
@@ -771,6 +849,110 @@ export default {
             } catch (error) {
                 message.error("保存总体意见失败"); console.log(error);
             }
+        },
+        async handleDataRetrieval() {
+            this.retrievalLoading = true;
+            this.retrievalResults = []; // 清空旧数据
+            this.mindMapResult = null;  // 清空旧数据
+
+            const payload = {
+                sources: this.retrieval.sources,
+                dateRange: this.retrieval.dateRange,
+                keywords: this.retrieval.keywords,
+                vulnType: this.retrieval.vulnType,
+                other: this.retrieval.other,
+            };
+            console.log(payload);
+
+            try {
+                // 2. 调用后端API (这是一个示例，请替换为您的真实API)
+                // const response = await api.post('/api/your/retrieval-endpoint', payload);
+        
+                // 【重要】因为后端接口未知，我们在这里手动抛出一个错误来进入catch块，以使用模拟数据。
+                // 当后端接口准备好后，您可以删除 throw new Error 并处理 response。
+                throw new Error("后端接口尚未就绪，切换到模拟数据模式");
+
+                // 如果API调用成功，您将在这里处理真实数据
+                // if (response.data.succeed) {
+                //     this.retrievalResults = response.data.data.vulnerabilityList;
+                //     this.mindMapResult = response.data.data.mindMap;
+                //     message.success('数据检索成功！');
+                // } else {
+                //     message.error('检索失败: ' + response.data.message);
+                // }
+
+            } catch (error) {
+                console.warn("API调用失败或未实现，正在使用模拟数据:", error.message);
+                message.info('正在加载模拟数据...');
+
+                // 3. catch块中创建并使用模拟数据
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 模拟网络延迟
+
+                // 模拟的漏洞数据列表
+                this.retrievalResults = [
+                    { id: 'CVE-2024-001', date: '2024-05-01', impactScore: 8.5, region: '北美', validationMethod: '静态分析', threatSource: '暗网', algoScore: 9.2, historicalRiskLevel: '高' },
+                    { id: 'CVE-2024-002', date: '2024-05-10', impactScore: 9.1, region: '欧洲', validationMethod: '动态分析', threatSource: 'APT组织', algoScore: 9.5, historicalRiskLevel: '高' },
+                    { id: 'CVE-2024-003', date: '2024-06-15', impactScore: 6.5, region: '亚洲', validationMethod: '人工验证', threatSource: '黑客论坛', algoScore: 7.1, historicalRiskLevel: '中' },
+                    { id: 'CVE-2024-004', date: '2024-07-20', impactScore: 7.2, region: '亚洲', validationMethod: '静态分析', threatSource: '暗网', algoScore: 7.8, historicalRiskLevel: '高' },
+                    { id: 'CVE-2024-005', date: '2024-07-25', impactScore: 5.0, region: '南美', validationMethod: '动态分析', threatSource: 'APT组织', algoScore: 6.5, historicalRiskLevel: '中' },
+                    { id: 'CVE-2024-006', date: '2024-08-01', impactScore: 6.8, region: '非洲', validationMethod: '静态分析', threatSource: '黑客论坛', algoScore: 7.0, historicalRiskLevel: '低' },
+                ];
+
+                // 模拟的大模型脑图结果 (这里使用一个图片URL作为示例)
+                this.mindMapResult = 'https://i.imgur.com/example_mindmap.png'; // 请替换为真实的或占位的图片URL
+
+                message.success('已加载模拟检索结果！');
+            } finally {
+                this.retrievalLoading = false;
+            }
+        },
+         /**
+            * @param {string} fieldName - 作为 Y 轴的字段名
+            * @param {string} displayName - 显示在图表上的名称
+        */
+        generatePieOption(fieldName, displayName) {
+            if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
+
+            const data = this.retrievalResults.reduce((acc, item) => {
+                const key = item[fieldName];
+                if (key) {
+                    acc[key] = (acc[key] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
+            const seriesData = Object.keys(data).map(key => ({
+                name: key,
+                value: data[key]
+            }));
+
+            return {
+                title: { text: displayName, left: 'center' },
+                tooltip: { trigger: 'item', formatter: '{a} <br/>{b} : {c} ({d}%)' },
+                legend: { orient: 'vertical', left: 'left', data: Object.keys(data) },
+                series: [{ name: displayName, type: 'pie', radius: '60%', data: seriesData }]
+            };
+        },
+
+        /**
+        * @param {string} fieldName - 作为 Y 轴的字段名
+        * @param {string} displayName - 显示在图表上的名称
+        */
+        generateLineOption(fieldName, displayName) {
+            if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
+
+            return {
+                title: { text: displayName, left: 'center' },
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: this.retrievalResults.map(item => item.date) }, // X轴统一使用日期
+                yAxis: { type: 'value', name: displayName },
+                series: [{
+                    name: displayName,
+                    type: 'line',
+                    data: this.retrievalResults.map(item => item[fieldName]),
+                    smooth: true
+                }]
+            };
         },
     },
 }
