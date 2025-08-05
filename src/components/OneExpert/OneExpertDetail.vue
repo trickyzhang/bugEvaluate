@@ -356,7 +356,6 @@ const FIELD_MAPPING = {
   'REGION': { fieldName: 'region', displayName: '漏洞地域分布', chartType: 'pie' },
   'VULN_IMPACT': { fieldName: 'impactScore', displayName: '漏洞影响分数', chartType: 'line' },
   'INTEL': { fieldName: 'threatSource', displayName: '威胁情报来源', chartType: 'pie' },
-  // 新增以下两个映射
   'ALGO': { fieldName: 'algoScore', displayName: '算法评测分数', chartType: 'line' },
   'REPORT': { fieldName: 'historicalRiskLevel', displayName: '历史案例风险分布', chartType: 'pie' },
 };
@@ -856,7 +855,7 @@ export default {
             this.mindMapResult = null;  // 清空旧数据
 
             const payload = {
-                sources: this.retrieval.sources,
+                source: this.retrieval.source,
                 dateRange: this.retrieval.dateRange,
                 keywords: this.retrieval.keywords,
                 vulnType: this.retrieval.vulnType,
