@@ -245,7 +245,12 @@
                                     <a-empty v-else description="请先选择一个数据来源并开始检索" />
                                 </div>
         
-                                <div v-else-if="retrieval.resultView === 'llm'">
+                                <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 400px;">
+                                    <a-spin :spinning="mindMapLoading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
+                                        <svg ref="markmapSvg" style="width: 100%; height: 100%;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
+        
+                                        <a-empty v-if="!mindMapLoading && !mindMapMarkdown" description="暂无内容，切换至此视图可自动生成" />
+                                    </a-spin>
                                 </div>
                             </div>
                         </div>
@@ -415,7 +420,7 @@
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input,  Radio, Select, DatePicker, Modal, message, Icon } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input,  Radio, Select, DatePicker, Modal, message, Icon,Empty, Spin } from 'ant-design-vue';
 import api from '@/utils/axios';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
@@ -423,6 +428,10 @@ import { Room, RoomEvent } from 'livekit-client';
 import config from '@/config';
 import VoiceTestModal from './VoiceTestModal.vue';
 import axios from 'axios';
+import { Transformer } from 'markmap-lib';
+import { Markmap } from 'markmap-view';
+
+const transformer = new Transformer(); 
 
 const FIELD_MAPPING = {
   'VULN_VERIFY': { fieldName: 'validationMethod', displayName: '漏洞验证方式', chartType: 'pie' },
@@ -437,7 +446,7 @@ export default {
     name: 'VulnerabilityAssessmentDetail', 
     components: {
         'a-button': Button, 'a-row': Row, 'a-col': Col, 'a-card': Card, 'a-form': Form,
-        'a-form-item': Form.Item, 'a-input': Input, 
+        'a-form-item': Form.Item, 'a-input': Input, 'a-empty': Empty,'a-spin': Spin,
          'a-radio-group': Radio.Group, 'a-radio-button': Radio.Button,
         'a-select': Select, 'a-select-option': Select.Option, 'a-range-picker': DatePicker.RangePicker,
         'a-textarea': Input.TextArea, 'a-modal': Modal, 'a-icon': Icon,
@@ -478,6 +487,9 @@ export default {
             retrievalLoading: false, 
             retrievalResults: [],    
             mindMapResult: null, 
+            mindMapMarkdown: '',
+            mindMapLoading: false,
+            markmapInstance: null,
             chatModalVisible: false, newChatMessage: '', chatHistory: [],
             algorithmModalVisible: false, modalLoading: false,
             algorithmParams: { paramA: '默认值1', paramB: '默认值2', paramC: '默认值3', paramD: '默认值4', modificationReason: '' },
@@ -545,6 +557,9 @@ export default {
         this.disconnectWebSocket();
         if (this.livekitRoom) {
             this.livekitRoom.disconnect();
+        }
+        if (this.markmapInstance) {
+            this.markmapInstance.destroy();
         }
     },
     methods: {
@@ -1405,6 +1420,84 @@ export default {
                     smooth: true
                 }]
             };
+        },
+        onResultViewChange(e) {
+            if (e.target.value === 'llm' && !this.mindMapMarkdown) {
+                this.generateMindMap();
+            }
+        },
+        async generateMindMap() {
+            if (this.retrievalResults.length === 0) {
+                message.warn('请先进行数据检索，再生成脑图。');
+                return;
+            }
+
+            this.mindMapLoading = true;
+            this.mindMapMarkdown = ''; 
+
+            try {
+                const markdownResponse = await this.mockLLMApi(this.retrievalResults);
+                this.mindMapMarkdown = markdownResponse;
+
+                // 1. 使用 Transformer 将 Markdown 转换为 Markmap 所需的数据结构
+                const { root } = transformer.transform(this.mindMapMarkdown);
+
+                // 2. 如果 Markmap 实例已存在，则直接更新数据
+                if (this.markmapInstance) {
+                    this.markmapInstance.setData(root);
+                } 
+                // 3. 如果实例不存在（首次加载），则创建实例并渲染
+                else {
+                    // Markmap.create(svg元素, [选项], [初始数据])
+                    this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
+                }
+
+            } catch (error) {
+                console.error("生成脑图失败:", error);
+                message.error("生成脑图时发生错误。");
+            } finally {
+                this.mindMapLoading = false;
+            }
+        },
+        async mockLLMApi(data) {
+            await new Promise(resolve => setTimeout(resolve, 1500)); // 模拟1.5秒的网络延迟
+
+            // --- 开始构建模拟的Markdown内容 ---
+            let markdown = '# 漏洞数据关联性分析脑图\n\n';
+            markdown += '这是一个基于检索结果生成的思维导图。\n\n';
+        
+            const highRiskVulns = data.filter(v => v.historicalRiskLevel === '高');
+            const mediumRiskVulns = data.filter(v => v.historicalRiskLevel === '中');
+            const lowRiskVulns = data.filter(v => v.historicalRiskLevel === '低');
+
+            markdown += '## 1. 风险等级分布\n';
+            markdown += `- **高风险 (${highRiskVulns.length}个)**\n`;
+            highRiskVulns.forEach(v => {
+                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
+            });
+            markdown += `- **中风险 (${mediumRiskVulns.length}个)**\n`;
+            mediumRiskVulns.forEach(v => {
+                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
+            });
+            markdown += `- **低风险 (${lowRiskVulns.length}个)**\n`;
+            lowRiskVulns.forEach(v => {
+                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
+            });
+
+            markdown += '\n## 2. 地域来源分析\n';
+            const regionCount = data.reduce((acc, item) => {
+                acc[item.region] = (acc[item.region] || 0) + 1;
+                return acc;
+            }, {});
+        
+            for (const region in regionCount) {
+                markdown += `- **${region}**: ${regionCount[region]} 个漏洞\n`;
+            }
+
+            markdown += '\n---\n*由Gemini模拟生成*';
+            // --- 模拟内容结束 ---
+
+            return markdown;
         },
     }
 }
