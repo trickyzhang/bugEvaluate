@@ -159,15 +159,12 @@
                             <label class="ant-form-item-label">请选择数据来源</label>
     
                             <a-radio-group v-model="retrieval.source">
-                            <a-radio value="VULN_VERIFY">漏洞验证数据</a-radio>
-                            <a-radio value="REGION">漏洞地域</a-radio>
-                            <a-radio value="ALGO">各评测算法解释数据</a-radio>
-                            <a-radio value="VULN_IMPACT">漏洞影响数据</a-radio>
-                            <a-radio value="REPORT">历史同类漏洞评估案例数据</a-radio>
-                            <a-radio value="INTEL">威胁情报</a-radio>
+                                <a-radio value="REGION">漏洞地域</a-radio>
+                                <a-radio value="ALGO">各评测算法解释数据</a-radio>
+                                <a-radio value="REPORT">历史同类漏洞评估案例数据</a-radio>
+                                <a-radio value="INTEL">威胁情报</a-radio>
                             </a-radio-group>
-
-                        </a-form-item>
+                            </a-form-item>
 
                         <div class="retrieval-request-box">
                             <p class="box-title">数据检索要求</p>
@@ -213,17 +210,18 @@
                                     <a-empty v-else description="暂无数据或未开始检索" />
                                 </div>
 
-                                <div v-else-if="retrieval.resultView === 'chart'" style="width: 100%; height: 100%;">
-                                    <v-chart
-                                    v-if="activeChartOption"
-                                    :option="activeChartOption"
-                                    :loading="retrievalLoading"
-                                    style="height: 350px; width: 100%;"
-                                    autoresize
-                                    />
-                                    <a-empty v-else description="请先选择一个数据来源并开始检索" />
+                                <div v-else-if="retrieval.resultView === 'chart'" style="width: 100%; height: 400px; overflow-y: auto; padding-right: 10px;">
+                                    <div v-if="activeChartOptions && activeChartOptions.length > 0">
+                                        <div v-for="(option, index) in activeChartOptions" :key="index" style="height: 350px; width: 100%; margin-bottom: 20px;">
+                                            <v-chart
+                                                :option="option"
+                                                :loading="retrievalLoading"
+                                                autoresize
+                                            />
+                                        </div>
+                                    </div>
+                                    <a-empty v-else description="请先选择数据来源并检索，或此来源无可展示图表" />
                                 </div>
-        
                                 <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 400px;">
                                     <a-spin :spinning="mindMapLoading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
                                         <svg ref="markmapSvg" style="width: 100%; height: 100%;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
@@ -351,23 +349,48 @@
 </template>
 
 <script>
-import { Button, Row, Col, Card, Form, Input, Radio, Select, DatePicker, Modal, message, Spin, Collapse, Empty } from 'ant-design-vue';
+import { Button, Row, Col, Card, Form, Input, Radio, Select, DatePicker, Modal, message, Spin, Collapse, Empty, Table } from 'ant-design-vue';
 
 import api from '@/utils/axios';
 import axios from 'axios';
 import { Transformer } from 'markmap-lib';
 import { Markmap } from 'markmap-view';
+// Echarts import
+import VChart from 'vue-echarts';
+import { use } from 'echarts/core';
+import { CanvasRenderer } from 'echarts/renderers';
+import { PieChart, LineChart } from 'echarts/charts';
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent } from 'echarts/components';
+
+use([CanvasRenderer, PieChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent]);
+
 
 const transformer = new Transformer(); 
 
+// MODIFICATION START: New FIELD_MAPPING based on API documentation
+// Maps data sources to multiple chart configurations.
 const FIELD_MAPPING = {
-  'VULN_VERIFY': { fieldName: 'validationMethod', displayName: '漏洞验证方式', chartType: 'pie' },
-  'REGION': { fieldName: 'region', displayName: '漏洞地域分布', chartType: 'pie' },
-  'VULN_IMPACT': { fieldName: 'impactScore', displayName: '漏洞影响分数', chartType: 'line' },
-  'INTEL': { fieldName: 'threatSource', displayName: '威胁情报来源', chartType: 'pie' },
-  'ALGO': { fieldName: 'algoScore', displayName: '算法评测分数', chartType: 'line' },
-  'REPORT': { fieldName: 'historicalRiskLevel', displayName: '历史案例风险分布', chartType: 'pie' },
+  'INTEL': [
+    { fieldName: 'field1', displayName: '威胁类型分布', chartType: 'pie' }, // [cite: 24]
+    { fieldName: 'field3', displayName: '威胁等级分布', chartType: 'pie' }, // [cite: 28]
+    { fieldName: 'createdAt', displayName: '情报数量趋势', chartType: 'line' } // [cite: 31]
+  ],
+  'REPORT': [
+    { fieldName: 'cveType', displayName: '漏洞类型分布', chartType: 'pie' }, // [cite: 39]
+    { fieldName: 'softwareType', displayName: '软件类型分布', chartType: 'pie' }, // [cite: 40]
+    { fieldName: 'createdAt', displayName: '历史案例数量趋势', chartType: 'line' } // [cite: 47]
+  ],
+  'REGION': [
+    { fieldName: 'vulnSource', displayName: '漏洞来源分布', chartType: 'pie' }, // [cite: 53]
+    { fieldName: 'geographic', displayName: '漏洞地理信息分布', chartType: 'pie' }, // [cite: 55]
+    { fieldName: 'industryName', displayName: '行业名称分布', chartType: 'pie' } // [cite: 57]
+  ],
+  'ALGO': [
+    // Assumes 'algoDimension' serializes to a usable string or has a 'name' property. [cite: 9]
+    { fieldName: 'algoDimension', displayName: '算法维度分布', chartType: 'pie' }
+  ]
 };
+// MODIFICATION END
 
 export default {
     name: 'VulnerabilityAssessment',
@@ -390,6 +413,8 @@ export default {
         'a-collapse': Collapse,
         'a-collapse-panel': Collapse.Panel,
         'a-empty': Empty,
+        'a-table': Table,
+        'v-chart': VChart,
     },
     data() {
         return {
@@ -433,48 +458,38 @@ export default {
             autoExplainLLMLoading: false,
             saveAutoExplainLoading: false,
             dynamicAutoAnalysis: {},
-            tableColumns: [
-                { title: '漏洞ID', dataIndex: 'id', key: 'id', width: 150, fixed: 'left' }, // 使用 fixed: 'left' 固定在左侧
-                { title: '发现日期', dataIndex: 'date', key: 'date', width: 120 },
-                { title: '影响分数', dataIndex: 'impactScore', key: 'impactScore', width: 100, sorter: (a, b) => a.impactScore - b.impactScore },
-                { title: '地域', dataIndex: 'region', key: 'region', width: 100 },
-                { title: '验证方式', dataIndex: 'validationMethod', key: 'validationMethod', width: 120 },
-                { title: '威胁来源', dataIndex: 'threatSource', key: 'threatSource', width: 120 },
-                { title: '算法分数', dataIndex: 'algoScore', key: 'algoScore', width: 100, sorter: (a, b) => a.algoScore - b.algoScore },
-                { title: '历史风险', dataIndex: 'historicalRiskLevel', key: 'historicalRiskLevel', width: 120 },
-            ],
+            tableColumns: [], // MODIFICATION: Table columns are now dynamic
         }
     },
     computed:{
-        activeChartOption() {
-            // 1. 检查是否选择了数据源
+        // MODIFICATION START: Replaced 'activeChartOption' with a new computed property
+        // that generates an array of chart options for the selected source.
+        activeChartOptions() {
             if (!this.retrieval.source || this.retrievalResults.length === 0) {
-                return null; // 如果没有选择或没有数据，不生成图表
+                return [];
             }
 
-            // 2. 从映射表中找到对应的配置信息
-            const mapping = FIELD_MAPPING[this.retrieval.source];
-            if (!mapping) {
-                return null; // 如果选择的源没有映射，不生成图表
+            const chartConfigs = FIELD_MAPPING[this.retrieval.source];
+            if (!chartConfigs || chartConfigs.length === 0) {
+                return []; 
             }
 
-            // 3. 根据映射的 chartType 调用对应的生成函数
-            let option = {};
-            if (mapping.chartType === 'pie') {
-                option = this.generatePieOption(mapping.fieldName, mapping.displayName);
-            } else if (mapping.chartType === 'line') {
-            option = this.generateLineOption(mapping.fieldName, mapping.displayName);
-            }
-      
-            return option;
+            return chartConfigs.map(config => {
+                if (config.chartType === 'pie') {
+                    return this.generatePieOption(config.fieldName, config.displayName);
+                } else if (config.chartType === 'line') {
+                    return this.generateLineOption(config.fieldName, config.displayName);
+                }
+                return null;
+            }).filter(option => option !== null); // Filter out any nulls if a chart type is unsupported
         }
+        // MODIFICATION END
     },
     created() {
         this.fetchDetails();
         this.fetchAlgoDescriptions(); 
     },
     beforeDestroy() {
-        // 在组件销毁前，销毁 markmap 实例
         if (this.markmapInstance) {
             this.markmapInstance.destroy();
         }
@@ -681,7 +696,6 @@ export default {
                 const objectToSave = {};
                 for (const key in this.dynamicAutoAnalysis) {
                     try {
-                        // If the textarea contains valid JSON, parse it back into an object
                         objectToSave[key] = JSON.parse(this.dynamicAutoAnalysis[key]);
                     } catch (e) {
                         objectToSave[key] = this.dynamicAutoAnalysis[key];
@@ -867,71 +881,84 @@ export default {
                 message.error("保存总体意见失败"); console.log(error);
             }
         },
+        // MODIFICATION START: Updated data retrieval method to call the live API
         async handleDataRetrieval() {
+            if (!this.retrieval.source) {
+                message.warn('请先选择数据来源');
+                return;
+            }
             this.retrievalLoading = true;
-            this.retrievalResults = []; // 清空旧数据
-            this.mindMapResult = null;  // 清空旧数据
+            this.retrievalResults = [];
+            this.tableColumns = [];
+
+            const [startDate, endDate] = this.retrieval.dateRange && this.retrieval.dateRange.length === 2
+                ? [this.retrieval.dateRange[0].format('YYYY-MM-DDTHH:mm:ss'), this.retrieval.dateRange[1].format('YYYY-MM-DDTHH:mm:ss')]
+                : [null, null];
 
             const payload = {
-                source: this.retrieval.source,
-                dateRange: this.retrieval.dateRange,
+                sources: [this.retrieval.source], // 已将 key 修改为 'sources' 且 value 修改为数组
+                startDate: startDate,
+                endDate: endDate,
                 keywords: this.retrieval.keywords,
                 vulnType: this.retrieval.vulnType,
-                other: this.retrieval.other,
+                page: 1,
+                pageSize: 100 
             };
             console.log(payload);
-
             try {
-                // 2. 调用后端API (这是一个示例，请替换为您的真实API)
-                // const response = await api.post('/api/your/retrieval-endpoint', payload);
-        
-                // 【重要】因为后端接口未知，我们在这里手动抛出一个错误来进入catch块，以使用模拟数据。
-                // 当后端接口准备好后，您可以删除 throw new Error 并处理 response。
-                throw new Error("后端接口尚未就绪，切换到模拟数据模式");
+                const response = await api.post('/api/search', payload); // 
 
-                // 如果API调用成功，您将在这里处理真实数据
-                // if (response.data.succeed) {
-                //     this.retrievalResults = response.data.data.vulnerabilityList;
-                //     this.mindMapResult = response.data.data.mindMap;
-                //     message.success('数据检索成功！');
-                // } else {
-                //     message.error('检索失败: ' + response.data.message);
-                // }
+                if (response.data && response.data.records) {
+                    // Parse the dataDetails JSON string in each record [cite: 62]
+                    this.retrievalResults = response.data.records.map((record, index) => {
+                        try {
+                            const parsedData = JSON.parse(record.dataDetails);
+                            parsedData.id = index; // Add a unique key for the table
+                            return parsedData;
+                        } catch (e) {
+                            console.error("Failed to parse dataDetails:", record.dataDetails);
+                            return { id: index, error: 'Invalid data format' }; 
+                        }
+                    });
 
+                    if (this.retrievalResults.length > 0) {
+                        // Dynamically set table columns based on the first result's keys
+                        const firstItem = this.retrievalResults[0];
+                        this.tableColumns = Object.keys(firstItem).map(key => ({
+                            title: key.charAt(0).toUpperCase() + key.slice(1), // Capitalize title
+                            dataIndex: key,
+                            key: key,
+                            width: 150,
+                        }));
+                        message.success(`成功检索到 ${response.data.total} 条数据！`);
+                    } else {
+                        message.info('检索成功，但当前条件下未返回任何数据。');
+                        this.tableColumns = [];
+                    }
+                } else {
+                    message.error('检索失败');
+                    console.log(response.data);
+                }
             } catch (error) {
-                console.warn("API调用失败或未实现，正在使用模拟数据:", error.message);
-                message.info('正在加载模拟数据...');
-
-                // 3. catch块中创建并使用模拟数据
-                await new Promise(resolve => setTimeout(resolve, 1000)); // 模拟网络延迟
-
-                // 模拟的漏洞数据列表
-                this.retrievalResults = [
-                    { id: 'CVE-2024-001', date: '2024-05-01', impactScore: 8.5, region: '北美', validationMethod: '静态分析', threatSource: '暗网', algoScore: 9.2, historicalRiskLevel: '高' },
-                    { id: 'CVE-2024-002', date: '2024-05-10', impactScore: 9.1, region: '欧洲', validationMethod: '动态分析', threatSource: 'APT组织', algoScore: 9.5, historicalRiskLevel: '高' },
-                    { id: 'CVE-2024-003', date: '2024-06-15', impactScore: 6.5, region: '亚洲', validationMethod: '人工验证', threatSource: '黑客论坛', algoScore: 7.1, historicalRiskLevel: '中' },
-                    { id: 'CVE-2024-004', date: '2024-07-20', impactScore: 7.2, region: '亚洲', validationMethod: '静态分析', threatSource: '暗网', algoScore: 7.8, historicalRiskLevel: '高' },
-                    { id: 'CVE-2024-005', date: '2024-07-25', impactScore: 5.0, region: '南美', validationMethod: '动态分析', threatSource: 'APT组织', algoScore: 6.5, historicalRiskLevel: '中' },
-                    { id: 'CVE-2024-006', date: '2024-08-01', impactScore: 6.8, region: '非洲', validationMethod: '静态分析', threatSource: '黑客论坛', algoScore: 7.0, historicalRiskLevel: '低' },
-                ];
-
-                // 模拟的大模型脑图结果 (这里使用一个图片URL作为示例)
-                this.mindMapResult = 'https://i.imgur.com/example_mindmap.png'; // 请替换为真实的或占位的图片URL
-
-                message.success('已加载模拟检索结果！');
+                console.error("数据检索接口调用失败:", error);
+                message.error('数据检索请求失败，请检查网络或联系管理员。');
             } finally {
                 this.retrievalLoading = false;
             }
         },
-         /**
-            * @param {string} fieldName - 作为 Y 轴的字段名
-            * @param {string} displayName - 显示在图表上的名称
-        */
+        // MODIFICATION END
+        
+        // MODIFICATION START: Updated Pie Chart generator
         generatePieOption(fieldName, displayName) {
             if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
 
             const data = this.retrievalResults.reduce((acc, item) => {
-                const key = item[fieldName];
+                let key = item[fieldName];
+                if (typeof key === 'object' && key !== null) {
+                    // Handle AlgoDimension object [cite: 9]
+                    key = key.name || key.code || key.value || JSON.stringify(key);
+                }
+
                 if (key) {
                     acc[key] = (acc[key] || 0) + 1;
                 }
@@ -944,33 +971,43 @@ export default {
             }));
 
             return {
-                title: { text: displayName, left: 'center' },
+                title: { text: displayName, left: 'center', textStyle: { fontSize: 14 } },
                 tooltip: { trigger: 'item', formatter: '{a} <br/>{b} : {c} ({d}%)' },
-                legend: { orient: 'vertical', left: 'left', data: Object.keys(data) },
-                series: [{ name: displayName, type: 'pie', radius: '60%', data: seriesData }]
+                legend: { type: 'scroll', orient: 'vertical', right: 10, top: 40, bottom: 20 },
+                series: [{ name: displayName, type: 'pie', radius: ['40%', '60%'], center: ['45%', '55%'], data: seriesData }]
             };
         },
+        // MODIFICATION END
 
-        /**
-        * @param {string} fieldName - 作为 Y 轴的字段名
-        * @param {string} displayName - 显示在图表上的名称
-        */
+        // MODIFICATION START: Updated Line Chart generator to handle time-series data
         generateLineOption(fieldName, displayName) {
             if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
+            
+            // Aggregate data by date for line charts
+            const dataByDate = this.retrievalResults.reduce((acc, item) => {
+                const dateString = item[fieldName];
+                if (dateString) {
+                    // Extract just the date part (YYYY-MM-DD) from a timestamp like "2025-08-06T00:46:32" [cite: 31, 47, 62]
+                    const date = dateString.split('T')[0]; 
+                    acc[date] = (acc[date] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
+            const sortedDates = Object.keys(dataByDate).sort((a, b) => new Date(a) - new Date(b));
+            const seriesData = sortedDates.map(date => dataByDate[date]);
 
             return {
-                title: { text: displayName, left: 'center' },
+                title: { text: displayName, left: 'center', textStyle: { fontSize: 14 } },
                 tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: this.retrievalResults.map(item => item.date) }, // X轴统一使用日期
-                yAxis: { type: 'value', name: displayName },
-                series: [{
-                    name: displayName,
-                    type: 'line',
-                    data: this.retrievalResults.map(item => item[fieldName]),
-                    smooth: true
-                }]
+                xAxis: { type: 'category', data: sortedDates, name: '日期' }, 
+                yAxis: { type: 'value', name: '数量' },
+                series: [{ name: displayName, type: 'line', data: seriesData, smooth: true }],
+                dataZoom: [ { type: 'inside' }, { type: 'slider' } ],
+                grid: { bottom: 80 } 
             };
         },
+        // MODIFICATION END
         onResultViewChange(e) {
             if (e.target.value === 'llm' && !this.mindMapMarkdown) {
                 this.generateMindMap();
@@ -988,19 +1025,15 @@ export default {
             try {
                 const markdownResponse = await this.mockLLMApi(this.retrievalResults);
                 this.mindMapMarkdown = markdownResponse;
-
-                // 1. 使用 Transformer 将 Markdown 转换为 Markmap 所需的数据结构
-                const { root } = transformer.transform(this.mindMapMarkdown);
-
-                // 2. 如果 Markmap 实例已存在，则直接更新数据
-                if (this.markmapInstance) {
-                    this.markmapInstance.setData(root);
-                } 
-                // 3. 如果实例不存在（首次加载），则创建实例并渲染
-                else {
-                    // Markmap.create(svg元素, [选项], [初始数据])
-                    this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
-                }
+                
+                this.$nextTick(() => {
+                    const { root } = transformer.transform(this.mindMapMarkdown);
+                    if (this.markmapInstance) {
+                        this.markmapInstance.setData(root);
+                    } else {
+                        this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
+                    }
+                });
 
             } catch (error) {
                 console.error("生成脑图失败:", error);
@@ -1010,42 +1043,29 @@ export default {
             }
         },
         async mockLLMApi(data) {
-            await new Promise(resolve => setTimeout(resolve, 1500)); // 模拟1.5秒的网络延迟
+            await new Promise(resolve => setTimeout(resolve, 1500)); 
+            
+            let markdown = `# 检索结果分析脑图\n\n数据来源: ${this.retrieval.source}\n`;
+            
+            const firstItem = data[0] || {};
+            const properties = Object.keys(firstItem);
 
-            // --- 开始构建模拟的Markdown内容 ---
-            let markdown = '# 漏洞数据关联性分析脑图\n\n';
-            markdown += '这是一个基于检索结果生成的思维导图。\n\n';
-        
-            const highRiskVulns = data.filter(v => v.historicalRiskLevel === '高');
-            const mediumRiskVulns = data.filter(v => v.historicalRiskLevel === '中');
-            const lowRiskVulns = data.filter(v => v.historicalRiskLevel === '低');
-
-            markdown += '## 1. 风险等级分布\n';
-            markdown += `- **高风险 (${highRiskVulns.length}个)**\n`;
-            highRiskVulns.forEach(v => {
-                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
+            properties.forEach(prop => {
+                if (prop === 'id') return;
+                markdown += `\n## ${prop} 分析\n`;
+                const values = data.map(item => item[prop]).filter(Boolean);
+                const uniqueValues = [...new Set(values)];
+                
+                if(uniqueValues.length < 10) { // If categorical
+                    uniqueValues.forEach(val => {
+                        const count = values.filter(v => v === val).length;
+                        markdown += `  - ${val} (${count}次)\n`;
+                    });
+                } else { // If too many unique values
+                    markdown += `  - 共 ${uniqueValues.length} 个独立值\n`;
+                    markdown += `  - 示例: ${uniqueValues.slice(0, 3).join(', ')}\n`;
+                }
             });
-            markdown += `- **中风险 (${mediumRiskVulns.length}个)**\n`;
-            mediumRiskVulns.forEach(v => {
-                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
-            });
-            markdown += `- **低风险 (${lowRiskVulns.length}个)**\n`;
-            lowRiskVulns.forEach(v => {
-                markdown += `  - ${v.id} (影响分数: ${v.impactScore})\n`;
-            });
-
-            markdown += '\n## 2. 地域来源分析\n';
-            const regionCount = data.reduce((acc, item) => {
-                acc[item.region] = (acc[item.region] || 0) + 1;
-                return acc;
-            }, {});
-        
-            for (const region in regionCount) {
-                markdown += `- **${region}**: ${regionCount[region]} 个漏洞\n`;
-            }
-
-            markdown += '\n---\n*由Gemini模拟生成*';
-            // --- 模拟内容结束 ---
 
             return markdown;
         }
