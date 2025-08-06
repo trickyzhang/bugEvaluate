@@ -163,6 +163,8 @@
                                 <a-radio value="ALGO">各评测算法解释数据</a-radio>
                                 <a-radio value="REPORT">历史同类漏洞评估案例数据</a-radio>
                                 <a-radio value="INTEL">威胁情报</a-radio>
+                                <a-radio value="VULN_VERIFY">漏洞验证数据</a-radio>
+                                <a-radio value="VULN_IMPACT">漏洞影响数据</a-radio>
                             </a-radio-group>
                             </a-form-item>
 
@@ -388,7 +390,19 @@ const FIELD_MAPPING = {
   'ALGO': [
     // Assumes 'algoDimension' serializes to a usable string or has a 'name' property. [cite: 9]
     { fieldName: 'algoDimension', displayName: '算法维度分布', chartType: 'pie' }
-  ]
+  ],
+  'VULN_VERIFY': [
+    { fieldName: 'attackVector', displayName: '攻击向量分布', chartType: 'pie' },
+    { fieldName: 'attackComplexity', displayName: '攻击复杂度分布', chartType: 'pie' },
+    { fieldName: 'vulnerabilityStatus', displayName: '漏洞状态分布', chartType: 'pie' },
+    { fieldName: 'updatedAt', displayName: '验证数据更新趋势', chartType: 'line' },
+  ],
+  'VULN_IMPACT': [
+    { fieldName: 'dangerLevel', displayName: '危险级别分布', chartType: 'pie' },
+    { fieldName: 'exposureLevel', displayName: '暴露程度分布', chartType: 'pie' },
+    { fieldName: 'confidentialityCol', displayName: '保密性影响分布', chartType: 'pie' },
+    { fieldName: 'cvss3Score', displayName: 'CVSS v3 分数趋势', chartType: 'line' },
+  ],
 };
 // MODIFICATION END
 
@@ -896,7 +910,7 @@ export default {
                 : [null, null];
 
             const payload = {
-                sources: [this.retrieval.source], // 已将 key 修改为 'sources' 且 value 修改为数组
+                sources: [this.retrieval.source],
                 startDate: startDate,
                 endDate: endDate,
                 keywords: this.retrieval.keywords,
