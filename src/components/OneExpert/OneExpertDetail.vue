@@ -224,7 +224,7 @@
                                     </div>
                                     <a-empty v-else description="请先选择数据来源并检索，或此来源无可展示图表" />
                                 </div>
-                                <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 400px;">
+                                <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 600px;">
                                     <a-spin :spinning="mindMapLoading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
                                         <svg ref="markmapSvg" style="width: 100%; height: 100%;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
         
@@ -369,7 +369,6 @@ use([CanvasRenderer, PieChart, LineChart, TitleComponent, TooltipComponent, Lege
 
 const transformer = new Transformer(); 
 
-// Maps data sources to multiple chart configurations.
 const FIELD_MAPPING = {
   'INTEL': [
     { fieldName: 'field1', displayName: '威胁类型分布', chartType: 'pie' }, 
@@ -475,8 +474,6 @@ export default {
         }
     },
     computed:{
-        // MODIFICATION START: Replaced 'activeChartOption' with a new computed property
-        // that generates an array of chart options for the selected source.
         activeChartOptions() {
             if (!this.retrieval.source || this.retrievalResults.length === 0) {
                 return [];
@@ -489,14 +486,13 @@ export default {
 
             return chartConfigs.map(config => {
                 if (config.chartType === 'pie') {
-                    return this.generatePieOption(config.fieldName, config.displayName);
+                    return this.generatePieOption(config);
                 } else if (config.chartType === 'line') {
-                    return this.generateLineOption(config.fieldName, config.displayName);
+                    return this.generateLineOption(config);
                 }
                 return null;
-            }).filter(option => option !== null); // Filter out any nulls if a chart type is unsupported
+            }).filter(option => option !== null);
         }
-        // MODIFICATION END
     },
     created() {
         this.fetchDetails();
@@ -894,7 +890,7 @@ export default {
                 message.error("保存总体意见失败"); console.log(error);
             }
         },
-        // MODIFICATION START: Updated data retrieval method to call the live API
+
         async handleDataRetrieval() {
             if (!this.retrieval.source) {
                 message.warn('请先选择数据来源');
@@ -963,14 +959,14 @@ export default {
         },
         // MODIFICATION END
         
-        // MODIFICATION START: Updated Pie Chart generator
-        generatePieOption(fieldName, displayName) {
+        generatePieOption(config) {
+            const { fieldName, displayName } = config;
+
             if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
 
             const data = this.retrievalResults.reduce((acc, item) => {
                 let key = item[fieldName];
                 if (typeof key === 'object' && key !== null) {
-                    // Handle AlgoDimension object [cite: 9]
                     key = key.name || key.code || key.value || JSON.stringify(key);
                 }
 
@@ -992,10 +988,10 @@ export default {
                 series: [{ name: displayName, type: 'pie', radius: ['40%', '60%'], center: ['45%', '55%'], data: seriesData }]
             };
         },
-        // MODIFICATION END
 
         // MODIFICATION START: Updated Line Chart generator to handle time-series data
-        generateLineOption(fieldName, displayName) {
+        generateLineOption(config) {
+            const { fieldName, displayName } = config;
             if (!this.retrievalResults || this.retrievalResults.length === 0) return {};
             
             // Aggregate data by date for line charts
@@ -1024,7 +1020,7 @@ export default {
         },
         // MODIFICATION END
         onResultViewChange(e) {
-            if (e.target.value === 'llm' && !this.mindMapMarkdown) {
+             if (e.target.value === 'llm') {
                 this.generateMindMap();
             }
         },
@@ -1034,28 +1030,50 @@ export default {
                 return;
             }
 
-            this.mindMapLoading = true;
-            this.mindMapMarkdown = ''; 
-
-            try {
-                const markdownResponse = await this.mockLLMApi(this.retrievalResults);
-                this.mindMapMarkdown = markdownResponse;
-                
-                this.$nextTick(() => {
-                    const { root } = transformer.transform(this.mindMapMarkdown);
-                    if (this.markmapInstance) {
-                        this.markmapInstance.setData(root);
-                    } else {
-                        this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
-                    }
-                });
-
-            } catch (error) {
-                console.error("生成脑图失败:", error);
-                message.error("生成脑图时发生错误。");
-            } finally {
-                this.mindMapLoading = false;
+            // 销毁旧实例，防止报错
+            if (this.markmapInstance) {
+                this.markmapInstance.destroy();
+                this.markmapInstance = null;
             }
+
+            // 仅在首次加载时生成Markdown内容
+            if (!this.mindMapMarkdown) {
+                this.mindMapLoading = true;
+                try {
+                    this.mindMapMarkdown = await this.mockLLMApi(this.retrievalResults);
+                } catch (error) {
+                    console.error("生成脑图失败:", error);
+                    message.error("生成脑图时发生错误。");
+                } finally {
+                    this.mindMapLoading = false;
+                }
+            }
+    
+            // 如果没有内容则不继续
+            if (!this.mindMapMarkdown) return;
+
+            // MODIFICATION START: Use setTimeout to ensure the fit() command runs after the DOM has fully rendered.
+            this.$nextTick(() => {
+                if (this.$refs.markmapSvg) {
+                try {
+                        const { root } = transformer.transform(this.mindMapMarkdown);
+                        // 1. 创建新实例
+                        this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
+                
+                        // 2. 施加一个短暂延迟后，强制执行自适应缩放
+                        setTimeout(() => {
+                            if (this.markmapInstance) {
+                                this.markmapInstance.fit();
+                            }
+                        }, 100); // 100毫秒延迟，确保浏览器完成布局
+
+                    } catch (e) {
+                        console.error("创建或适配脑图时出错:", e);
+                        message.error("创建脑图时发生内部错误。");
+                    }
+                }
+            });
+            // MODIFICATION END
         },
         async mockLLMApi(data) {
             await new Promise(resolve => setTimeout(resolve, 1500)); 
