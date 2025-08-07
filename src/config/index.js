@@ -5,11 +5,11 @@ const config = {
   },
   
   livekit: {
-    url: process.env.VUE_APP_LIVEKIT_URL || 'ws://10.13.1.104:7880'
+    url: process.env.VUE_APP_LIVEKIT_URL || 'wss://10.13.1.104:9443'
   },
   
   api: {
-    baseURL: process.env.VUE_APP_API_BASE_URL || 'http://10.13.1.104:8080'
+    baseURL: process.env.VUE_APP_API_BASE_URL || 'https://10.13.1.104:9443'
   }
 };
 

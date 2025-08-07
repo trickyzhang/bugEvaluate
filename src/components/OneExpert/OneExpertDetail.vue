@@ -226,7 +226,7 @@
                                 </div>
                                 <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 600px;">
                                     <a-spin :spinning="mindMapLoading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
-                                        <svg ref="markmapSvg" style="width: 100%; height: 100%;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
+                                        <svg ref="markmapSvg" style="width: 500px; height: 600px;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
         
                                         <a-empty v-if="!mindMapLoading && !mindMapMarkdown" description="暂无内容，切换至此视图可自动生成" />
                                     </a-spin>
@@ -899,6 +899,7 @@ export default {
             this.retrievalLoading = true;
             this.retrievalResults = [];
             this.tableColumns = [];
+            this.mindMapMarkdown = '';            
 
             const [startDate, endDate] = this.retrieval.dateRange && this.retrieval.dateRange.length === 2
                 ? [this.retrieval.dateRange[0].format('YYYY-MM-DDTHH:mm:ss'), this.retrieval.dateRange[1].format('YYYY-MM-DDTHH:mm:ss')]
@@ -930,8 +931,6 @@ export default {
                         }
                     });
 
-                    console.log(this.retrievalResults);
-
                     if (this.retrievalResults.length > 0) {
                         // Dynamically set table columns based on the first result's keys
                         const firstItem = this.retrievalResults[0];
@@ -956,8 +955,12 @@ export default {
             } finally {
                 this.retrievalLoading = false;
             }
+
+            if (this.retrieval.resultView === 'llm') {
+                this.generateMindMap();
+            }
         },
-        // MODIFICATION END
+
         
         generatePieOption(config) {
             const { fieldName, displayName } = config;
@@ -1052,13 +1055,15 @@ export default {
             // 如果没有内容则不继续
             if (!this.mindMapMarkdown) return;
 
-            // MODIFICATION START: Use setTimeout to ensure the fit() command runs after the DOM has fully rendered.
             this.$nextTick(() => {
                 if (this.$refs.markmapSvg) {
                 try {
                         const { root } = transformer.transform(this.mindMapMarkdown);
                         // 1. 创建新实例
-                        this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null, root);
+                        this.markmapInstance = Markmap.create(this.$refs.markmapSvg, null,{
+                            ...root,          // 保留原有的节点树结构
+                            autoFit: true     // 添加 autoFit 配置（true/false 按需设置）
+                        });
                 
                         // 2. 施加一个短暂延迟后，强制执行自适应缩放
                         setTimeout(() => {
@@ -1073,7 +1078,6 @@ export default {
                     }
                 }
             });
-            // MODIFICATION END
         },
         async mockLLMApi(data) {
             await new Promise(resolve => setTimeout(resolve, 1500)); 

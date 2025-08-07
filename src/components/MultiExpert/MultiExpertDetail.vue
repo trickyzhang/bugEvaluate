@@ -249,7 +249,7 @@
         
                                 <div v-else-if="retrieval.resultView === 'llm'" style="width: 100%; height: 600px;">
                                     <a-spin :spinning="mindMapLoading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
-                                        <svg ref="markmapSvg" style="width: 100%; height: 100%;" v-show="!mindMapLoading && mindMapMarkdown"></svg>
+                                        <svg ref="markmapSvg" style="width: 500px; height: 600px" v-show="!mindMapLoading && mindMapMarkdown"></svg>
                                         <a-empty v-if="!mindMapLoading && !mindMapMarkdown" description="暂无内容，切换至此视图可自动生成" />
                                     </a-spin>
                                 </div>
@@ -1350,6 +1350,7 @@ export default {
             this.retrievalLoading = true;
             this.retrievalResults = [];
             this.tableColumns = [];
+            this.mindMapMarkdown = ''; 
 
             const [startDate, endDate] = this.retrieval.dateRange && this.retrieval.dateRange.length === 2
                 ? [this.retrieval.dateRange[0].format('YYYY-MM-DDTHH:mm:ss'), this.retrieval.dateRange[1].format('YYYY-MM-DDTHH:mm:ss')]
@@ -1364,7 +1365,7 @@ export default {
                 page: 1,
                 pageSize: 100 
             };
-            console.log(payload);
+
             try {
                 const response = await api.post('/api/search', payload); 
 
@@ -1407,9 +1408,12 @@ export default {
             } finally {
                 this.retrievalLoading = false;
             }
+
+            if (this.retrieval.resultView === 'llm') {
+                this.generateMindMap();
+            }
         },
-        // MODIFICATION END
-        
+
         generatePieOption(config) {
             const { fieldName, displayName } = config;
 
