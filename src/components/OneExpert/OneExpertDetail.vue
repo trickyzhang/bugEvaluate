@@ -369,23 +369,22 @@ use([CanvasRenderer, PieChart, LineChart, TitleComponent, TooltipComponent, Lege
 
 const transformer = new Transformer(); 
 
-// MODIFICATION START: New FIELD_MAPPING based on API documentation
 // Maps data sources to multiple chart configurations.
 const FIELD_MAPPING = {
   'INTEL': [
-    { fieldName: 'field1', displayName: '威胁类型分布', chartType: 'pie' }, // [cite: 24]
-    { fieldName: 'field3', displayName: '威胁等级分布', chartType: 'pie' }, // [cite: 28]
-    { fieldName: 'createdAt', displayName: '情报数量趋势', chartType: 'line' } // [cite: 31]
+    { fieldName: 'field1', displayName: '威胁类型分布', chartType: 'pie' }, 
+    { fieldName: 'field3', displayName: '威胁等级分布', chartType: 'pie' }, 
+    { fieldName: 'createdAt', displayName: '情报数量趋势', chartType: 'line' } 
   ],
   'REPORT': [
-    { fieldName: 'cveType', displayName: '漏洞类型分布', chartType: 'pie' }, // [cite: 39]
-    { fieldName: 'softwareType', displayName: '软件类型分布', chartType: 'pie' }, // [cite: 40]
-    { fieldName: 'createdAt', displayName: '历史案例数量趋势', chartType: 'line' } // [cite: 47]
+    { fieldName: 'cveType', displayName: '漏洞类型分布', chartType: 'pie' }, 
+    { fieldName: 'softwareType', displayName: '软件类型分布', chartType: 'pie' }, 
+    { fieldName: 'createdAt', displayName: '历史案例数量趋势', chartType: 'line' } 
   ],
   'REGION': [
-    { fieldName: 'vulnSource', displayName: '漏洞来源分布', chartType: 'pie' }, // [cite: 53]
-    { fieldName: 'geographic', displayName: '漏洞地理信息分布', chartType: 'pie' }, // [cite: 55]
-    { fieldName: 'industryName', displayName: '行业名称分布', chartType: 'pie' } // [cite: 57]
+    { fieldName: 'vulnSource', displayName: '漏洞来源分布', chartType: 'pie' }, 
+    { fieldName: 'geographic', displayName: '漏洞地理信息分布', chartType: 'pie' }, 
+    { fieldName: 'industryName', displayName: '行业名称分布', chartType: 'pie' } 
   ],
   'ALGO': [
     // Assumes 'algoDimension' serializes to a usable string or has a 'name' property. [cite: 9]
@@ -401,10 +400,10 @@ const FIELD_MAPPING = {
     { fieldName: 'dangerLevel', displayName: '危险级别分布', chartType: 'pie' },
     { fieldName: 'exposureLevel', displayName: '暴露程度分布', chartType: 'pie' },
     { fieldName: 'confidentialityCol', displayName: '保密性影响分布', chartType: 'pie' },
-    { fieldName: 'cvss3Score', displayName: 'CVSS v3 分数趋势', chartType: 'line' },
+    //{ fieldName: 'cvss3Score', displayName: 'CVSS v3 分数趋势', chartType: 'line' },
+    { fieldName: 'updatedAt', valueField: 'cvss3Score', displayName: 'CVSS v3 分数趋势', chartType: 'line' },
   ],
 };
-// MODIFICATION END
 
 export default {
     name: 'VulnerabilityAssessment',
@@ -920,7 +919,7 @@ export default {
             };
             console.log(payload);
             try {
-                const response = await api.post('/api/search', payload); // 
+                const response = await api.post('/api/search', payload); 
 
                 if (response.data && response.data.records) {
                     // Parse the dataDetails JSON string in each record [cite: 62]
@@ -934,6 +933,8 @@ export default {
                             return { id: index, error: 'Invalid data format' }; 
                         }
                     });
+
+                    console.log(this.retrievalResults);
 
                     if (this.retrievalResults.length > 0) {
                         // Dynamically set table columns based on the first result's keys

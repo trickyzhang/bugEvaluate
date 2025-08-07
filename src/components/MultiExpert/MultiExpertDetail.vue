@@ -215,7 +215,7 @@
 
                         <div class="retrieval-result-box">
                             <p class="box-title">数据检索结果</p>
-                            <a-radio-group v-model="retrieval.resultView" button-style="solid">
+                            <a-radio-group v-model="retrieval.resultView" button-style="solid" @change="onResultViewChange">
                                 <a-radio-button value="table">表格</a-radio-button>
                                 <a-radio-button value="chart">图表</a-radio-button>
                                 <a-radio-button value="llm">大模型生成结果</a-radio-button>
